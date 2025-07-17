@@ -1,0 +1,11 @@
+Package: python3-truenas-pylibvirt
+Source: truenas-pylibvirt
+Version: 0.0.1-1
+Architecture: amd64
+Maintainer: TrueNAS Engineering <dev@truenas.com>
+Installed-Size: 79
+Depends: python3:any, python3-libvirt
+Section: contrib/python
+Priority: optional
+Homepage: https://github.com/truenas/truenas_pylibvirt
+Description: Convenient wrapper for python3-libvirt

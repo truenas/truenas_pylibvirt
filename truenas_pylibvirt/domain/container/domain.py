@@ -1,0 +1,21 @@
+import contextlib
+
+from ..base.domain import BaseDomain
+from .configuration import ContainerDomainConfiguration
+from .xml import ContainerDomainXmlGenerator
+
+
+class ContainerDomain(BaseDomain):
+    xml_generator_class = ContainerDomainXmlGenerator
+
+    configuration: ContainerDomainConfiguration
+
+    def pid(self) -> int | None:
+        pid_path = f"/var/run/libvirt/lxc/{self.configuration.uuid}.pid"
+        with contextlib.suppress(FileNotFoundError):
+            # Do not make a stat call to check if file exists or not
+            with open(pid_path, 'r') as f:
+                pid = int(f.read())
+
+            with open(f'/proc/{pid}/task/{pid}/children') as f:
+                return int(f.read().split()[0])
