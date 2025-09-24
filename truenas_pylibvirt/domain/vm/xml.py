@@ -1,31 +1,37 @@
 import shlex
+from typing import TYPE_CHECKING
 
 from ...device.display import DisplayDevice, DisplayDeviceType
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
-from .configuration import Bootloader, CpuMode
-from .domain import VmDomain
+from .configuration import VmBootloader, VmCpuMode
+
+if TYPE_CHECKING:
+    from .domain import VmDomain
 
 
 class VmDomainXmlGenerator(BaseDomainXmlGenerator):
-    domain: VmDomain
+    domain: "VmDomain"
 
     def _type(self) -> str:
         return "kvm"
 
     def _os_xml(self):
+        hvm_attributes = {}
+        if self.domain.configuration.arch_type:
+            hvm_attributes["arch"] = self.domain.configuration.arch_type
+        if self.domain.configuration.machine_type:
+            hvm_attributes["machine"] = self.domain.configuration.machine_type
+
         children = [
             xml_element(
                 "type",
-                attributes={
-                    "arch": self.domain.configuration.arch_type,
-                    "machine": self.domain.configuration.machine_type,
-                },
+                attributes=hvm_attributes,
                 text="hvm",
             )
         ]
 
-        if self.domain.configuration.bootloader == Bootloader.UEFI:
+        if self.domain.configuration.bootloader == VmBootloader.UEFI:
             children.extend([
                 xml_element(
                     "loader",
@@ -58,7 +64,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
             },
         ))
 
-        if self.domain.configuration.cpu_mode == CpuMode.CUSTOM:
+        if self.domain.configuration.cpu_mode == VmCpuMode.CUSTOM:
             if self.domain.configuration.cpu_model:  # and context['cpu_model_choices'].get(vm_data['cpu_model']
                 # Right now this is best effort for the domain to start with specified CPU Model and not fallback
                 # However if some features are missing in the host, qemu will right now still start the domain
@@ -70,7 +76,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                     text=self.domain.configuration.cpu_model,
                 ))
 
-        if self.domain.configuration.cpu_mode == CpuMode.HOST_PASSTHROUGH:
+        if self.domain.configuration.cpu_mode == VmCpuMode.HOST_PASSTHROUGH:
             cpu_children.append(xml_element("cache", attributes={"mode": "passthrough"}))
             if self.domain.configuration.enable_cpu_topology_extension:
                 cpu_children.append(xml_element("feature", attributes={"name": "topoext", "policy": "require"}))

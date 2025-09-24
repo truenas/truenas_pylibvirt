@@ -63,6 +63,9 @@ class ContainerDomain(BaseDomain):
             with open(f'/proc/{pid}/task/{pid}/children') as f:
                 return int(f.read().split()[0])
 
+    def undefine(self, libvirt_domain):
+        libvirt_domain.undefine()
+
     def _x_mount_idmap(self, item: ContainerIdmapConfigurationItem):
         return f"0:{item.target}:{item.count}"
 

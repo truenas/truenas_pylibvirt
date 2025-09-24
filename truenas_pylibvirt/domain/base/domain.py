@@ -22,3 +22,6 @@ class BaseDomain:
 
     def pid(self) -> int | None:
         raise NotImplementedError
+
+    def undefine(self, libvirt_domain):
+        raise NotImplementedError

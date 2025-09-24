@@ -1,19 +1,21 @@
+from dataclasses import dataclass
 import enum
 
 from ..base.configuration import BaseDomainConfiguration
 
 
-class Bootloader(enum.Enum):
+class VmBootloader(enum.Enum):
     UEFI = "UEFI"
     UEFI_CSM = "UEFI_CSM"
 
 
-class CpuMode(enum.Enum):
+class VmCpuMode(enum.Enum):
     CUSTOM = "CUSTOM"
     HOST_MODEL = "HOST-MODEL"
     HOST_PASSTHROUGH = "HOST-PASSTHROUGH"
 
 
+@dataclass(kw_only=True)
 class VmDomainConfiguration(BaseDomainConfiguration):
     vcpus: int
     cores: int
@@ -21,9 +23,9 @@ class VmDomainConfiguration(BaseDomainConfiguration):
     memory: int
     arch_type: str
     machine_type: str
-    bootloader: Bootloader
+    bootloader: VmBootloader
     bootloader_ovmf: str
-    cpu_mode: CpuMode
+    cpu_mode: VmCpuMode
     cpu_model: str
     enable_cpu_topology_extension: bool
     nodeset: str | None
