@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import enum
 
 from ..xml import xml_element
@@ -16,6 +17,7 @@ class StorageDeviceIoType(enum.Enum):
     IO_URING = "IO_URING"
 
 
+@dataclass(kw_only=True)
 class BaseStorageDevice(Device):
     type_: StorageDeviceType
     logical_sectorsize: int | None
@@ -28,7 +30,7 @@ class BaseStorageDevice(Device):
             target_bus = "virtio"
             target_dev = f"vd{disk_from_number(context.counters.next_virtual_device_no())}"
         else:
-            target_bus = "ahci"
+            target_bus = "sata"
             target_dev = f"sd{disk_from_number(context.counters.next_scsi_device_no())}"
 
         children = [
@@ -57,19 +59,38 @@ class BaseStorageDevice(Device):
                     attributes={"logical_block_size": str(self.logical_sectorsize)}
                 ))
 
+        return [
+            xml_element(
+                "disk",
+                attributes={"type": self._disk_type(), "device": "disk"},
+                children=children,
+            )
+        ]
+
+    def _disk_type(self) -> str:
+        raise NotImplementedError
+
     def _source_xml(self, context: DeviceXmlContext):
         raise NotImplementedError()
 
 
+@dataclass(kw_only=True)
 class RawStorageDevice(BaseStorageDevice):
     path: str
+
+    def _disk_type(self) -> str:
+        return "file"
 
     def _source_xml(self, context: DeviceXmlContext):
         return xml_element("source", attributes={"file": self.path})
 
 
+@dataclass(kw_only=True)
 class DiskStorageDevice(BaseStorageDevice):
     path: str
+
+    def _disk_type(self) -> str:
+        return "block"
 
     def _source_xml(self, context: DeviceXmlContext):
         return xml_element("source", attributes={"dev": self.path})

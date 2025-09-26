@@ -117,7 +117,7 @@ class DomainManager:
             # interaction with its domain
             time.sleep(7)
 
-        libvirt_domain.undefine()
+        domain.undefine(libvirt_domain)
 
     def _libvirt_domain(self, domain: BaseDomain):
         libvirt_domain = self.connection.get_domain(domain.configuration.uuid)
