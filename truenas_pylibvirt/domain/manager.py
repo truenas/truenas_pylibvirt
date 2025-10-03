@@ -4,9 +4,10 @@ import threading
 import time
 from xml.etree import ElementTree
 
-from ..libvirtd.connection import Connection, DomainEvent, DomainState
 from ..error import Error, DomainDoesNotExistError
+from ..libvirtd.connection import Connection, DomainEvent, DomainState
 from .base.domain import BaseDomain
+from .start_validator import StartValidator, StartValidationContext
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +15,28 @@ STOPPED_STATES = [DomainState.SHUTDOWN, DomainState.SHUTOFF, DomainState.CRASHED
 
 
 class StartedDomain:
-    def __init__(self, domain: BaseDomain):
+    def __init__(self, domain: BaseDomain, connection: Connection):
+        self.connection = connection
         self.domain = domain
         self.exit_stack = ExitStack()
-        self.context = self.exit_stack.enter_context(self.domain.run())
+
+        self.domain.device_manager.set_connection(self.connection)
+        # Start devices before domain
+        self.domain.device_manager.start_devices()
+
+        try:
+            self.context = self.exit_stack.enter_context(self.domain.run())
+        except Exception:
+            # If domain.run() fails, cleanup devices
+            self.domain.device_manager.cleanup_devices()
+            raise
 
     def cleanup(self):
+        # Cleanup domain context first
         self.exit_stack.close()
+
+        # Then cleanup devices
+        self.domain.device_manager.cleanup_devices()
 
 
 class DomainManager:
@@ -28,6 +44,7 @@ class DomainManager:
         self.connection = connection
         self.started_domains: dict[str, StartedDomain] = {}
         self.started_domains_lock = threading.Lock()
+        self.start_validator = StartValidator()
 
         self.connection.register_domain_event_callback(self._domain_event_callback)
 
@@ -46,7 +63,17 @@ class DomainManager:
                     else:
                         raise Error(f"Domain {domain.configuration.name!r} is already started ({domain_state!r}).")
 
-            started_domain = StartedDomain(domain)
+            validation_context = StartValidationContext(
+                connection=self.connection,
+                domain_uuid=domain.configuration.uuid
+            )
+
+            errors = self.start_validator.validate(domain, validation_context)
+            if errors:
+                error_msg = "\n".join([f"{field}: {error}" for field, error in errors])
+                raise Error(f"Cannot start domain {domain.configuration.name!r}:\n{error_msg}")
+
+            started_domain = StartedDomain(domain, self.connection)
             created = False
             try:
                 xml = ElementTree.tostring(domain.xml_generator(started_domain.context).generate()).decode()

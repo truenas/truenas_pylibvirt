@@ -11,6 +11,7 @@ class Time(enum.Enum):
 
 @dataclass(kw_only=True)
 class BaseDomainConfiguration:
+    id: int | None = None
     uuid: str
     name: str
     description: str
