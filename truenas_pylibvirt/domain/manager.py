@@ -4,19 +4,24 @@ import threading
 import time
 from xml.etree import ElementTree
 
-from ..libvirtd.connection import Connection, DomainEvent, DomainState
 from ..error import Error, DomainDoesNotExistError
+from ..libvirtd.connection import Connection, DomainEvent, DomainState, VirDomainEvent
 from .base.domain import BaseDomain
+from .start_validator import StartValidator, StartValidationContext
 
 logger = logging.getLogger(__name__)
 
 STOPPED_STATES = [DomainState.SHUTDOWN, DomainState.SHUTOFF, DomainState.CRASHED]
+STOPPED_EVENTS = [VirDomainEvent.STOPPED, VirDomainEvent.SHUTDOWN, VirDomainEvent.UNDEFINED]
 
 
 class StartedDomain:
-    def __init__(self, domain: BaseDomain):
+    def __init__(self, domain: BaseDomain, connection: Connection):
+        self.connection = connection
         self.domain = domain
         self.exit_stack = ExitStack()
+
+        self.exit_stack.enter_context(self.domain.device_manager.start(connection))
         self.context = self.exit_stack.enter_context(self.domain.run())
 
     def cleanup(self):
@@ -28,6 +33,7 @@ class DomainManager:
         self.connection = connection
         self.started_domains: dict[str, StartedDomain] = {}
         self.started_domains_lock = threading.Lock()
+        self.start_validator = StartValidator()
 
         self.connection.register_domain_event_callback(self._domain_event_callback)
 
@@ -46,7 +52,17 @@ class DomainManager:
                     else:
                         raise Error(f"Domain {domain.configuration.name!r} is already started ({domain_state!r}).")
 
-            started_domain = StartedDomain(domain)
+            validation_context = StartValidationContext(
+                connection=self.connection,
+                domain_uuid=domain.configuration.uuid
+            )
+
+            errors = self.start_validator.validate(domain.device_manager.devices, validation_context)
+            if errors:
+                error_msg = "\n".join([f"{field}: {error}" for field, error in errors])
+                raise Error(f"Cannot start domain {domain.configuration.name!r}:\n{error_msg}")
+
+            started_domain = StartedDomain(domain, self.connection)
             created = False
             try:
                 xml = ElementTree.tostring(domain.xml_generator(started_domain.context).generate()).decode()
@@ -139,8 +155,7 @@ class DomainManager:
         if libvirt_domain is None:
             return
 
-        state = self.connection.domain_state(libvirt_domain)
-        if state in STOPPED_STATES:
+        if event.event in STOPPED_EVENTS:
             with self.started_domains_lock:
                 if started_domain := self.started_domains.pop(event.uuid, None):
                     started_domain.cleanup()

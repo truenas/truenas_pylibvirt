@@ -7,18 +7,33 @@ on:
       - 'opened'
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+
     - name: Set up Python
-      uses: actions/setup-python@v1
-    - name: Install pytest
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libvirt-dev pkg-config
+
+    - name: Clone and install truenas_pynetif
+      run: |
+        git clone https://github.com/truenas/truenas_pynetif.git
+        pip install -e truenas_pynetif/
+
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-asyncio setuptools
-    - name: Install package
-      run: python setup.py install
+        pip install -r requirements-test.txt
+        pip install -e .
+
     - name: Run tests
-      run: pytest -v tests
+      run: |
+        pytest -v --tb=short tests/

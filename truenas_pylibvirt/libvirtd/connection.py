@@ -33,6 +33,19 @@ class DomainState(enum.Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class VirDomainEvent(enum.Enum):
+    DEFINED = "DEFINED"
+    UNDEFINED = "UNDEFINED"
+    STARTED = "STARTED"
+    SUSPENDED = "SUSPENDED"
+    RESUMED = "RESUMED"
+    STOPPED = "STOPPED"
+    SHUTDOWN = "SHUTDOWN"
+    PMSUSPENDED = "PMSUSPENDED"
+    CRASHED = "CRASHED"
+    UNKNOWN = "UNKNOWN"
+
+
 class DomainEventType(enum.Enum):
     ADDED = "ADDED"
     CHANGED = "CHANGED"
@@ -40,6 +53,7 @@ class DomainEventType(enum.Enum):
 
 @dataclass
 class DomainEvent:
+    event: VirDomainEvent
     uuid: str
 
 
@@ -102,6 +116,19 @@ class Connection:
             libvirt.VIR_DOMAIN_PMSUSPENDED: DomainState.PMSUSPENDED,
         }[domain.state()[0]]
 
+    def domain_event(self, event: int):
+        return {
+            libvirt.VIR_DOMAIN_EVENT_DEFINED: VirDomainEvent.DEFINED,
+            libvirt.VIR_DOMAIN_EVENT_UNDEFINED: VirDomainEvent.UNDEFINED,
+            libvirt.VIR_DOMAIN_EVENT_STARTED: VirDomainEvent.STARTED,
+            libvirt.VIR_DOMAIN_EVENT_SUSPENDED: VirDomainEvent.SUSPENDED,
+            libvirt.VIR_DOMAIN_EVENT_RESUMED: VirDomainEvent.RESUMED,
+            libvirt.VIR_DOMAIN_EVENT_STOPPED: VirDomainEvent.STOPPED,
+            libvirt.VIR_DOMAIN_EVENT_SHUTDOWN: VirDomainEvent.SHUTDOWN,
+            libvirt.VIR_DOMAIN_EVENT_PMSUSPENDED: VirDomainEvent.PMSUSPENDED,
+            libvirt.VIR_DOMAIN_EVENT_CRASHED: VirDomainEvent.CRASHED
+        }.get(event, VirDomainEvent.UNKNOWN)
+
     def _open(self):
         connection = self.manager.open(self.uri)
 
@@ -119,9 +146,9 @@ class Connection:
         self._connection = None
 
     def _libvirt_event_callback(self, conn, dom, event, detail, opaque):
-        event = DomainEvent(dom.name())
+        domain_event = DomainEvent(uuid=dom.name(), event=self.domain_event(event))
         for callback in self._domain_event_callbacks:
             try:
-                callback(event)
+                callback(domain_event)
             except Exception:
                 logger.error("Unhandled exception in domain event callback %r", callback, exc_info=True)

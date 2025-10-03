@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import enum
+import os
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -19,10 +20,12 @@ class StorageDeviceIoType(enum.Enum):
 
 @dataclass(kw_only=True)
 class BaseStorageDevice(Device):
+
     type_: StorageDeviceType
     logical_sectorsize: int | None
     physical_sectorsize: int | None
     iotype: StorageDeviceIoType
+    path: str
     serial: str
 
     def xml(self, context: DeviceXmlContext):
@@ -73,10 +76,28 @@ class BaseStorageDevice(Device):
     def _source_xml(self, context: DeviceXmlContext):
         raise NotImplementedError()
 
+    def validate_impl(self) -> list[tuple[str, str]]:
+        verrors = []
+        if self.physical_sectorsize and not self.logical_sectorsize:
+            verrors.append(
+                (
+                    'logical_sectorsize',
+                    'This field "logical_sectorsize" must be provided when physical_sectorsize is specified.'
+                )
+            )
+        if not self.path:
+            verrors.append(('path', 'This field is required.'))
+        return verrors
+
+    def identity_impl(self) -> str:
+        return self.path
+
+    def is_available_impl(self) -> bool:
+        return os.path.exists(self.identity())
+
 
 @dataclass(kw_only=True)
 class RawStorageDevice(BaseStorageDevice):
-    path: str
 
     def _disk_type(self) -> str:
         return "file"
@@ -87,10 +108,15 @@ class RawStorageDevice(BaseStorageDevice):
 
 @dataclass(kw_only=True)
 class DiskStorageDevice(BaseStorageDevice):
-    path: str
 
     def _disk_type(self) -> str:
         return "block"
 
     def _source_xml(self, context: DeviceXmlContext):
         return xml_element("source", attributes={"dev": self.path})
+
+    def validate_impl(self) -> list[tuple[str, str]]:
+        verrors = super().validate_impl()
+        if self.path and not self.path.startswith("/dev/zvol"):
+            verrors.append(("path", "Disk path must start with '/dev/zvol/'."))
+        return verrors

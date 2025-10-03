@@ -4,13 +4,23 @@ Priority: optional
 Maintainer: TrueNAS Engineering <dev@truenas.com>
 Build-Depends: debhelper-compat (= 12),
                dh-python,
+               dpkg-dev,
+               pybuild-plugin-pyproject,
                python3-all-dev,
                python3-setuptools,
-               python3-libvirt
+               python3-libvirt,
+               python3-pytest,
+               python3-pyudev,
+               python3-truenas-pynetif
 Standards-Version: 4.4.1
 Homepage: https://github.com/truenas/truenas_pylibvirt
 
 Package: python3-truenas-pylibvirt
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, ${python3:Depends}, python3-libvirt
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         ${python3:Depends},
+         python3-libvirt,
+         python3-pyudev,
+         python3-truenas-pynetif
 Description: Convenient wrapper for python3-libvirt

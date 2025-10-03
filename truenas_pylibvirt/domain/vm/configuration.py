@@ -38,3 +38,4 @@ class VmDomainConfiguration(BaseDomainConfiguration):
     enable_secure_boot: bool
     command_line_args: str
     suspend_on_snapshot: bool
+    nvram_path: str

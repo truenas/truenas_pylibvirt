@@ -1,0 +1,5 @@
+# Runtime dependencies
+libvirt-python>=9.0.0
+pyudev>=0.24.0
+# truenas-pynetif is installed separately from git in CI/CD
+# For local development: pip install -e ../truenas_pynetif
