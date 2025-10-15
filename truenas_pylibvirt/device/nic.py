@@ -1,8 +1,18 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
 import enum
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import truenas_pynetif as netif
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
+
+
+if TYPE_CHECKING:
+    from ..libvirtd.connection import Connection
 
 
 class NICDeviceType(enum.Enum):
@@ -17,6 +27,7 @@ class NICDeviceModel(enum.Enum):
 
 @dataclass(kw_only=True)
 class NICDevice(Device):
+
     type_: NICDeviceType
     source: str
     model: NICDeviceModel | None
@@ -37,7 +48,7 @@ class NICDevice(Device):
                         "interface",
                         attributes={"type": "bridge"},
                         children=[
-                            xml_element("source", attributes={"bridge": self.source}),
+                            xml_element("source", attributes={"bridge": self.identity()}),
                             *children,
                         ],
                     ),
@@ -50,8 +61,42 @@ class NICDevice(Device):
                         "interface",
                         attributes={"type": "direct", "trustGuestRxFilters": trust_guest_rx_filters},
                         children=[
-                            xml_element("source", attributes={"dev": self.source, "mode": "bridge"}),
+                            xml_element("source", attributes={"dev": self.identity(), "mode": "bridge"}),
                             *children,
                         ],
                     )
                 ]
+
+    @contextmanager
+    def run(self, connection: Connection, domain_uuid: str):
+        if (nic := netif.get_interface(self.identity(), True)) and nic and netif.InterfaceFlags.UP not in nic.flags:
+            nic.up()
+
+        yield
+
+    def is_available_impl(self) -> bool:
+        return self.identity() in netif.list_interfaces()
+
+    def identity_impl(self) -> str:
+        nic_attach = self.source
+        if not nic_attach:
+            nic_attach = netif.RoutingTable().default_route_ipv4.interface
+        return nic_attach
+
+    def validate_impl(self) -> list[tuple[str, str]]:
+        verrors = []
+        if self.source and self.source.startswith('br') and self.trust_guest_rx_filters:
+            verrors.append(
+                ('trust_guest_rx_filters', 'This can only be set when "nic_attach" is not a bridge device')
+            )
+
+        if self.trust_guest_rx_filters and self.model == NICDeviceModel.E1000:
+            verrors.append(
+                ('trust_guest_rx_filters', 'This can only be set when "type" of NIC device is "VIRTIO"')
+            )
+
+        if self.mac and self.mac.lower().startswith('ff'):
+            verrors.append(
+                ('mac', 'MAC address must not start with `ff`')
+            )
+        return verrors

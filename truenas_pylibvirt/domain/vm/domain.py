@@ -9,11 +9,7 @@ from .xml import VmDomainXmlGenerator
 
 class VmDomain(BaseDomain):
     xml_generator_class = VmDomainXmlGenerator
-
     configuration: VmDomainConfiguration
-
-    def nvram_path(self):
-        return ""  # FIXME
 
     def pid(self) -> int | None:
         pid_path = f"/var/run/libvirt/qemu/{self.configuration.uuid}.pid"

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import contextlib
 from typing import TYPE_CHECKING
 
 from .configuration import BaseDomainConfiguration
+from ...device.manager import DeviceManager
 
 if TYPE_CHECKING:
     from .xml import BaseDomainXmlGenerator
@@ -12,8 +15,9 @@ class BaseDomain:
 
     def __init__(self, configuration: BaseDomainConfiguration):
         self.configuration = configuration
+        self.device_manager = DeviceManager(configuration.devices, domain_uuid=configuration.uuid)
 
-    def xml_generator(self, context) -> "BaseDomainXmlGenerator":
+    def xml_generator(self, context) -> BaseDomainXmlGenerator:
         return self.xml_generator_class(self, context)
 
     @contextlib.contextmanager

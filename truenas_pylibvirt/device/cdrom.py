@@ -1,9 +1,14 @@
-from ..xml import xml_element
+import os
+from dataclasses import dataclass
+
 from .base import Device, DeviceXmlContext
 from .utils import disk_from_number
+from ..xml import xml_element
 
 
+@dataclass(kw_only=True)
 class CDROMDevice(Device):
+
     path: str
 
     def xml(self, context: DeviceXmlContext):
@@ -22,3 +27,19 @@ class CDROMDevice(Device):
                 ]
             )
         ]
+
+    def identity_impl(self) -> str:
+        return self.path
+
+    def is_available_impl(self) -> bool:
+        return os.path.exists(self.identity())
+
+    def validate_impl(self) -> list[tuple[str, str]]:
+        verrors = []
+        if not self.path.strip():
+            verrors.append(('path', 'Path is required for CDROM device'))
+        elif not os.path.isabs(self.path):
+            verrors.append(('path', 'Path must be an absolute path'))
+        elif not os.path.exists(self.path):
+            verrors.append(('path', f'Path {self.path} does not exist'))
+        return verrors

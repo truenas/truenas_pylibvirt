@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import shlex
 from typing import TYPE_CHECKING
 
@@ -5,13 +7,15 @@ from ...device.display import DisplayDevice, DisplayDeviceType
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
 from .configuration import VmBootloader, VmCpuMode
+from ...utils.cpu import get_cpu_model_choices
 
 if TYPE_CHECKING:
     from .domain import VmDomain
 
 
 class VmDomainXmlGenerator(BaseDomainXmlGenerator):
-    domain: "VmDomain"
+
+    domain: VmDomain
 
     def _type(self) -> str:
         return "kvm"
@@ -44,7 +48,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                 ),
                 xml_element(
                     "nvram",
-                    text=self.domain.nvram_path(),
+                    text=self.domain.configuration.nvram_path,
                 ),
             ])
 
@@ -65,7 +69,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         ))
 
         if self.domain.configuration.cpu_mode == VmCpuMode.CUSTOM:
-            if self.domain.configuration.cpu_model:  # and context['cpu_model_choices'].get(vm_data['cpu_model']
+            if self.domain.configuration.cpu_model and get_cpu_model_choices(self.domain.configuration.cpu_model):
                 # Right now this is best effort for the domain to start with specified CPU Model and not fallback
                 # However if some features are missing in the host, qemu will right now still start the domain
                 # and mark them as missing. We should perhaps make this configurable in the future to control
