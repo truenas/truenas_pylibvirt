@@ -38,7 +38,6 @@ class BaseStorageDevice(Device):
 
         children = [
             xml_element("driver", attributes={
-                "name": "qemu",
                 "type": "raw",
                 "cache": "none",
                 "io": self.iotype.value.lower(),
