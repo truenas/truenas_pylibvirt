@@ -11,7 +11,7 @@ from truenas_pylibvirt.device import CDROMDevice
     (
         "/mnt/tank/disk.iso",
         '<disk type="file" device="cdrom">'
-        '<driver name="qemu" type="raw" />'
+        '<driver type="raw" />'
         '<source file="/mnt/tank/disk.iso" />'
         '<target dev="sda" bus="sata" />'
         '<boot order="1" /></disk>'
