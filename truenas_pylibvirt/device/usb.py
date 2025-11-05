@@ -13,10 +13,35 @@ class USBDevice(Device):
     vendor_id: str | None
     product_id: str | None
     device: str | None
-    controller_type: str
+    controller_type: str | None
 
     def xml(self, context: DeviceXmlContext):
         capability = self.get_usb_details()['capability']
+        children = [
+            xml_element(
+                "source",
+                children=[
+                    xml_element("vendor", attributes={"id": capability['vendor_id']}),
+                    xml_element("product", attributes={"id": capability['product_id']}),
+                    xml_element(
+                        "address", attributes={
+                            "bus": capability['bus'], "device": capability['device'],
+                        }
+                    ),
+                ],
+            ),
+        ]
+        if self.controller_type:
+            children.append(
+                xml_element(
+                    "address",
+                    attributes={
+                        "type": "usb",
+                        "bus": str(context.counters.usb_controller_no(self.controller_type)),
+                    },
+                ),
+            )
+
         return [
             xml_element(
                 "hostdev",
@@ -25,27 +50,7 @@ class USBDevice(Device):
                     "type": "usb",
                     "managed": "yes",
                 },
-                children=[
-                    xml_element(
-                        "source",
-                        children=[
-                            xml_element("vendor", attributes={"id": capability['vendor_id']}),
-                            xml_element("product", attributes={"id": capability['product_id']}),
-                            xml_element(
-                                "address", attributes={
-                                    "bus": capability['bus'], "device": capability['device'],
-                                }
-                            ),
-                        ],
-                    ),
-                    xml_element(
-                        "address",
-                        attributes={
-                            "type": "usb",
-                            "bus": str(context.counters.usb_controller_no(self.controller_type)),
-                        },
-                    ),
-                ],
+                children=children,
             ),
         ]
 

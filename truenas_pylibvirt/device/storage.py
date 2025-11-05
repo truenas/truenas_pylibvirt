@@ -24,9 +24,9 @@ class BaseStorageDevice(Device):
     type_: StorageDeviceType
     logical_sectorsize: int | None
     physical_sectorsize: int | None
-    iotype: StorageDeviceIoType
+    iotype: StorageDeviceIoType | None
     path: str
-    serial: str
+    serial: str | None
 
     def xml(self, context: DeviceXmlContext):
         if self.type_ == StorageDeviceType.VIRTIO:
@@ -40,14 +40,14 @@ class BaseStorageDevice(Device):
             xml_element("driver", attributes={
                 "type": "raw",
                 "cache": "none",
-                "io": self.iotype.value.lower(),
                 "discard": "unmap"
-            }),
+            } | ({"io": self.iotype.value.lower()} if self.iotype else {})),
             self._source_xml(context),
             xml_element("target", attributes={"bus": target_bus, "dev": target_dev},),
-            xml_element("serial", text=self.serial),
             xml_element("boot", attributes={"order": str(context.counters.next_boot_no())}),
         ]
+        if self.serial:
+            children.append(xml_element("serial", text=self.serial))
 
         if self.logical_sectorsize:
             if self.physical_sectorsize:
