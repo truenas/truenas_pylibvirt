@@ -14,11 +14,11 @@ from truenas_pylibvirt.device import DiskStorageDevice, RawStorageDevice, Storag
         StorageDeviceIoType.THREADS,
         "test-serial",
         '<disk type="block" device="disk">'
-        '<driver type="raw" cache="none" io="threads" discard="unmap" />'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
         '<source dev="/dev/zvol/pool/boot_1" />'
         '<target bus="sata" dev="sda" />'
-        '<serial>test-serial</serial>'
         '<boot order="1" />'
+        '<serial>test-serial</serial>'
         '</disk>'
     ),
 ])
@@ -49,11 +49,11 @@ def test_disk_xml_generation(path, type_, io_type, serial, expected_xml, device_
         None,
         None,
         '<disk type="file" device="disk">'
-        '<driver type="raw" cache="none" io="threads" discard="unmap" />'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
         '<source file="/mnt/tank/somefile" />'
         '<target bus="sata" dev="sda" />'
-        '<serial>test-serial</serial>'
         '<boot order="1" />'
+        '<serial>test-serial</serial>'
         '</disk>'
     ),
     (
@@ -64,11 +64,11 @@ def test_disk_xml_generation(path, type_, io_type, serial, expected_xml, device_
         512,
         512,
         '<disk type="file" device="disk">'
-        '<driver type="raw" cache="none" io="threads" discard="unmap" />'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
         '<source file="/mnt/tank/somefile" />'
         '<target bus="sata" dev="sda" />'
-        '<serial>test-serial</serial>'
         '<boot order="1" />'
+        '<serial>test-serial</serial>'
         '<blockio physical_block_size="512" />'
         '</disk>'
     ),
