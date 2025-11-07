@@ -39,3 +39,4 @@ class VmDomainConfiguration(BaseDomainConfiguration):
     command_line_args: str
     suspend_on_snapshot: bool
     nvram_path: str
+    tpm_path: str

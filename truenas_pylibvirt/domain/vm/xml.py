@@ -173,7 +173,12 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                 "tpm",
                 attributes={"model": "tpm-crb"},
                 children=[
-                    xml_element("backend", attributes={"type": "emulator", "version": "2.0"}),
+                    xml_element(
+                        "backend", attributes={"type": "emulator", "version": "2.0", "persistent_state": "yes"},
+                        children=[xml_element(
+                            "source", attributes={"type": "dir", "path": self.domain.configuration.tpm_path},
+                        )]
+                    ),
                 ],
             ))
 
