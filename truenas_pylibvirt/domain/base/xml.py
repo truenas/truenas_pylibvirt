@@ -78,14 +78,14 @@ class BaseDomainXmlGenerator:
         raise NotImplementedError()
 
     def _cpu_xml(self):
-        if self.domain.configuration.vcpus is None:
+        if self.domain.configuration.vcpus is None and not self.domain.configuration.cpuset:
             return []
 
         return [
             xml_element(
                 "vcpu",
                 attributes={"cpuset": self.domain.configuration.cpuset} if self.domain.configuration.cpuset else {},
-                text=str(self.domain.configuration.vcpus *
+                text=str((self.domain.configuration.vcpus or 1) *
                          (self.domain.configuration.cores or 1) *
                          (self.domain.configuration.threads or 1))
             )
