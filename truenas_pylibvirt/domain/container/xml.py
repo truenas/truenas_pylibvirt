@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING
 
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
+from ...device.gpu import GPUDevice
+
 
 if TYPE_CHECKING:
     from .domain import ContainerDomain, ContainerDomainContext
@@ -39,7 +41,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         return xml_element("os", children=children)
 
     def _devices_xml_children(self):
-        return [
+        devices_xml = [
             *super()._devices_xml_children(),
             xml_element(
                 "emulator",
@@ -58,6 +60,15 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
                 ],
             ),
         ]
+        # We will have to handle GPU's specially
+        # For AMD case, we need to add /dev/kfd once even if multiple GPUs are being specified
+        if gpu_device := next((
+            device for device in self.domain.configuration.devices
+            if isinstance(device, GPUDevice) and device.gpu_type.lower() == 'amd'
+        ), None):
+            devices_xml.extend(gpu_device.gpu.driver_xml())
+
+        return devices_xml
 
     def _features_xml_children(self):
         return [

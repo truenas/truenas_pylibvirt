@@ -98,7 +98,7 @@ def get_all_pci_devices_details() -> dict:
     result = dict()
     iommu_info = get_iommu_groups_info(get_critical_info=True)
     for i in Context().list_devices(subsystem='pci'):
-        key = f"pci_{i.sys_name.replace(':', '_').replace('.', '_')}"
+        key = normalize_pci_address(i.sys_name)
         result[key] = get_pci_device_details(i, iommu_info)
 
     return result
@@ -111,6 +111,10 @@ def get_single_pci_device_details(device: str) -> dict:
         lambda x: x.sys_name == RE_DEVICE_PATH.sub(r'\1:\2:\3.\4', device),
         Context().list_devices(subsystem='pci')
     ):
-        key = f"pci_{i.sys_name.replace(':', '_').replace('.', '_')}"
+        key = normalize_pci_address(i.sys_name)
         result[key] = get_pci_device_details(i, iommu_info)
     return result
+
+
+def normalize_pci_address(pci_address: str) -> str:
+    return f"pci_{pci_address.replace(':', '_').replace('.', '_')}"
