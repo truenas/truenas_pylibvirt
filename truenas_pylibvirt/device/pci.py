@@ -120,7 +120,7 @@ class PCIDevice(Device):
         elif pci_device_details['error']:
             verrors.append((
                 'pptdev',
-                f'Not a valid choice. The PCI device is not available: {pci_device_details['error']}'
+                f'Not a valid choice. The PCI device is not available: {pci_device_details["error"]}'
             ))
         elif pci_device_details['critical']:
             verrors.append((
