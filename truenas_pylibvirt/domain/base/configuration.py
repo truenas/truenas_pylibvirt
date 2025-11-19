@@ -20,7 +20,6 @@ class BaseDomainConfiguration:
     cpuset: str | None
     memory: int | None
     time: Time
-    autostart: bool
     shutdown_timeout: int
     devices: list[Device]
 
