@@ -129,17 +129,25 @@ def test_amd_gpu_validation_success(
 
 @patch('truenas_pylibvirt.device.gpu_utils.normalize_pci_address')
 @patch('truenas_pylibvirt.device.gpu_utils.os.path.exists')
+@patch('truenas_pylibvirt.device.gpu_utils.pathlib.Path')
 @patch('truenas_pylibvirt.device.gpu_utils.get_single_pci_device_details')
 def test_amd_gpu_validation_missing_kfd(
-    mock_get_pci, mock_exists, mock_normalize,
+    mock_get_pci, mock_path, mock_exists, mock_normalize,
     mock_device_delegate
 ):
     """Test AMD GPU validation when /dev/kfd is missing."""
     # Mock normalize
     mock_normalize.return_value = '0000:19:00.0'
 
-    # Mock that kfd doesn't exist
-    mock_exists.return_value = False
+    # Mock render device path (should exist to pass DRMBase validation)
+    mock_render_dir = MagicMock()
+    mock_render_node = MagicMock()
+    mock_render_node.name = 'renderD128'
+    mock_render_dir.iterdir.return_value = [mock_render_node]
+    mock_path.return_value = mock_render_dir
+
+    # Mock that render device exists but kfd doesn't
+    mock_exists.side_effect = lambda path: path == '/dev/dri/renderD128'
 
     # Mock PCI device details
     mock_get_pci.return_value = {
