@@ -65,9 +65,7 @@ class GPUBase(ABC):
         ...
 
 
-class AMD(GPUBase, gpu_type='AMD'):
-
-    DRIVER_PATH = '/dev/kfd'
+class DRMBase(GPUBase):
 
     @property
     def render_device_dir_path(self) -> str:
@@ -85,19 +83,15 @@ class AMD(GPUBase, gpu_type='AMD'):
             return None
 
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(self.DRIVER_PATH) and self.render_device_path is not None
+        return super().is_available() and self.render_device_path is not None
 
     def validate(self) -> list[tuple[str, str]]:
-        # We would like to ensure 2 things here:
-        # We have /dev/kfd available
-        # We have compute/render node available
+        # We would like to ensure that we have compute/render node available
         verrors = super().validate()
         if verrors:
             # No point in continuing if PCI device cannot be located
             return verrors
 
-        if not os.path.exists(self.DRIVER_PATH):
-            verrors.append(('gpu_type', f'{self.DRIVER_PATH!r} must exist for AMD GPUs'))
         if not self.render_device_path:
             verrors.append(('pci_address', 'Unable to locate compute/render node for GPU'))
         return verrors
@@ -113,6 +107,25 @@ class AMD(GPUBase, gpu_type='AMD'):
             ),
         ]
 
+
+class AMD(DRMBase, gpu_type='AMD'):
+
+    DRIVER_PATH = '/dev/kfd'
+
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(self.DRIVER_PATH)
+
+    def validate(self) -> list[tuple[str, str]]:
+        # We should ensure that we have /dev/kfd available
+        verrors = super().validate()
+        if verrors:
+            # No point in continuing if PCI device or compute node cannot be located
+            return verrors
+
+        if not os.path.exists(self.DRIVER_PATH):
+            verrors.append(('gpu_type', f'{self.DRIVER_PATH!r} must exist for AMD GPUs'))
+        return verrors
+
     def driver_xml(self) -> list:
         return [
             xml_element(
@@ -123,3 +136,7 @@ class AMD(GPUBase, gpu_type='AMD'):
                 ]
             ),
         ]
+
+
+class INTEL(DRMBase, gpu_type='INTEL'):
+    pass
