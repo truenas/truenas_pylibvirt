@@ -1,9 +1,10 @@
+import contextlib
 import functools
 import os
 import pathlib
 from abc import ABC, abstractmethod
 
-from ..utils.gpu import get_gpus
+from ..utils.gpu import get_gpus, parse_nvidia_info_file
 from ..utils.pci import get_single_pci_device_details, normalize_pci_address
 from ..xml import xml_element
 
@@ -140,3 +141,64 @@ class AMD(DRMBase, gpu_type='AMD'):
 
 class INTEL(DRMBase, gpu_type='INTEL'):
     pass
+
+
+class NVIDIA(GPUBase, gpu_type='NVIDIA'):
+
+    DRIVERS_PATH = ['/dev/nvidia-uvm', '/dev/nvidiactl']
+
+    @property
+    def drivers_available(self) -> bool:
+        return all(os.path.exists(path) for path in self.DRIVERS_PATH)
+
+    @property
+    def device_info_path(self) -> str:
+        return os.path.join('/proc/driver/nvidia/gpus', self.pci_address, 'information')
+
+    @functools.cached_property
+    def device_path(self) -> str | None:
+        with contextlib.suppress(FileNotFoundError):
+            with open(self.device_info_path, 'r') as f:
+                info, _ = parse_nvidia_info_file(f)
+                if (path := f'/dev/nvidia{info.get("device_minor")}') and os.path.exists(path):
+                    return path
+
+        return None
+
+    def is_available(self) -> bool:
+        return super().is_available() and self.drivers_available and self.device_path is not None
+
+    def validate(self) -> list[tuple[str, str]]:
+        # We will like to validate following things here:
+        # nvidia drivers are available i.e nvidia-uvm / nvidiactl
+        # nvidia gpu's device node is available
+        verrors = super().validate()
+        if self.drivers_available is False:
+            verrors.append(('gpu_type', f'NVIDIA drivers ({", ".join(self.DRIVERS_PATH)}) must exist for NVIDIA GPUs'))
+
+        if not self.device_path:
+            verrors.append(('pci_address', 'Unable to locate NVIDIA device node'))
+
+        return verrors
+
+    def driver_xml(self) -> list:
+        return [
+            xml_element(
+                'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[
+                    xml_element('source', children=[
+                        xml_element('char', text=driver_path),
+                    ]),
+                ]
+            ) for driver_path in self.DRIVERS_PATH
+        ]
+
+    def xml(self) -> list:
+        return [
+            xml_element(
+                'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[
+                    xml_element('source', children=[
+                        xml_element('char', text=self.device_path),
+                    ]),
+                ]
+            ),
+        ]

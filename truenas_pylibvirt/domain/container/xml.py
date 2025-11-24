@@ -64,7 +64,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         # For AMD case, we need to add /dev/kfd once even if multiple GPUs are being specified
         if gpu_device := next((
             device for device in self.domain.configuration.devices
-            if isinstance(device, GPUDevice) and device.gpu_type.lower() == 'amd'
+            if isinstance(device, GPUDevice) and device.gpu_type.lower() in ('amd', 'nvidia')
         ), None):
             devices_xml.extend(gpu_device.gpu.driver_xml())
 
