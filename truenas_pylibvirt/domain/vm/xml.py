@@ -8,6 +8,7 @@ from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
 from .configuration import VmBootloader, VmCpuMode
 from ...utils.cpu import get_cpu_model_choices
+from ...utils.ovmf import get_ovmf_vars_file
 
 if TYPE_CHECKING:
     from .domain import VmDomain
@@ -48,6 +49,10 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                 ),
                 xml_element(
                     "nvram",
+                    attributes={"template": template_file}
+                    if (
+                        template_file := get_ovmf_vars_file(self.domain.configuration.bootloader_ovmf)
+                    ) else {},
                     text=self.domain.configuration.nvram_path,
                 ),
             ])
