@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -91,7 +91,8 @@ from truenas_pylibvirt.utils.pci import get_pci_device_details
         }
     ),
 ])
-def test__get_pci_device_details(pcidevs, results):
+@patch('truenas_pylibvirt.utils.pci.os.path.exists', return_value=False)
+def test__get_pci_device_details(mock_exists, pcidevs, results):
     iommu_info = {
         '0000:00:00.0': {
             'number': 27,
