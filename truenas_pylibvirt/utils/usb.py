@@ -130,13 +130,6 @@ def find_usb_device_by_libvirt_name(device_name: str) -> dict:
         if bus == target_bus and devnum == target_devnum:
             return get_usb_device_details(device)
 
-    # Check if it might be a port-based naming (e.g., 1-7 format)
-    # Try to find by sys_name pattern
-    for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
-        # sys_name like "1-7" maps to usb_1_7 in some cases
-        if device.sys_name == f"{target_bus}-{target_devnum}":
-            return get_usb_device_details(device)
-
     return {
         **get_usb_device_default_data(),
         'error': f'USB device {device_name} not found'
@@ -171,15 +164,6 @@ def find_usb_device_by_ids(vendor_id: str, product_id: str) -> str | None:
         if device_vendor == vendor_id and device_product == product_id:
             # Build libvirt device name from bus and device numbers
             bus = props.get('BUSNUM', '').lstrip('0') or '0'
-
-            # For port-based devices, try to use sys_name
-            if '-' in device.sys_name:
-                # Format like "1-7" - use the part after dash
-                parts = device.sys_name.split('-')
-                if len(parts) == 2:
-                    return f"usb_{bus}_{parts[1]}"
-
-            # Otherwise use device number
             devnum = props.get('DEVNUM', '').lstrip('0') or '0'
             return f"usb_{bus}_{devnum}"
 
@@ -208,18 +192,8 @@ def get_all_usb_devices() -> dict:
         props = device.properties
         bus = props.get('BUSNUM', '').lstrip('0') or '0'
 
-        # Build device name
-        if '-' in device.sys_name and device.sys_name.startswith(f"{bus}-"):
-            # Use port-based naming for devices like "1-7"
-            parts = device.sys_name.split('-')
-            if len(parts) == 2:
-                device_name = f"usb_{bus}_{parts[1]}"
-            else:
-                continue
-        else:
-            # Use device number
-            devnum = props.get('DEVNUM', '').lstrip('0') or '0'
-            device_name = f"usb_{bus}_{devnum}"
+        devnum = props.get('DEVNUM', '').lstrip('0') or '0'
+        device_name = f"usb_{bus}_{devnum}"
 
         # Skip if already added (shouldn't happen but just in case)
         if device_name not in result:
