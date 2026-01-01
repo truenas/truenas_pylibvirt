@@ -120,14 +120,14 @@ class DomainManager:
     def resume(self, domain: BaseDomain):
         libvirt_domain = self._libvirt_domain(domain)
 
-        if self.connection.domain_state(libvirt_domain) != DomainState.SUSPENDED:
+        if self.connection.domain_state(libvirt_domain) != DomainState.PAUSED:
             raise Error(f"Domain {domain.configuration.name!r} is not suspended")
 
         libvirt_domain.resume()
 
     def delete(self, domain: BaseDomain):
         libvirt_domain = self._libvirt_domain(domain)
-        if self.connection.domain_state(libvirt_domain) in [DomainState.RUNNING, DomainState.SUSPENDED]:
+        if self.connection.domain_state(libvirt_domain) in [DomainState.RUNNING, DomainState.PAUSED]:
             self._destroy(libvirt_domain)
             # We would like to wait at least 7 seconds to have the vm complete its post vm actions which might require
             # interaction with its domain
