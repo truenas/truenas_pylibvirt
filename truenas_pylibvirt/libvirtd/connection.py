@@ -24,7 +24,7 @@ class DomainState(enum.Enum):
     NOSTATE = "NOSTATE"
     RUNNING = "RUNNING"
     BLOCKED = "BLOCKED"
-    SUSPENDED = "SUSPENDED"
+    PAUSED = "PAUSED"
     SHUTDOWN = "SHUTDOWN"
     SHUTOFF = "SHUTOFF"
     CRASHED = "CRASHED"
@@ -109,7 +109,7 @@ class Connection:
             libvirt.VIR_DOMAIN_NOSTATE: DomainState.NOSTATE,
             libvirt.VIR_DOMAIN_RUNNING: DomainState.RUNNING,
             libvirt.VIR_DOMAIN_BLOCKED: DomainState.BLOCKED,
-            libvirt.VIR_DOMAIN_PAUSED: DomainState.SUSPENDED,
+            libvirt.VIR_DOMAIN_PAUSED: DomainState.PAUSED,
             libvirt.VIR_DOMAIN_SHUTDOWN: DomainState.SHUTDOWN,
             libvirt.VIR_DOMAIN_SHUTOFF: DomainState.SHUTOFF,
             libvirt.VIR_DOMAIN_CRASHED: DomainState.CRASHED,
