@@ -52,6 +52,18 @@ class USBDevice(Device):
                 },
                 children=children,
             ),
+            *(
+                [
+                    xml_element(
+                        "controller",
+                        attributes={
+                            "type": "usb",
+                            "index": str(context.counters.usb_controller_no(self.controller_type)),
+                            "model": self.controller_type
+                        }
+                    )
+                ] if self.controller_type and self.controller_type != 'nec-xhci' else []
+            )
         ]
 
     def identity_impl(self) -> str:
