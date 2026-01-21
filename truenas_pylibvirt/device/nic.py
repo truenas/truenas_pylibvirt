@@ -5,7 +5,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import truenas_pynetif as netif
+from truenas_pynetif.address.netlink import link_exists
+from truenas_pynetif.bits import InterfaceFlags
+from truenas_pynetif.netif import get_interface
+from truenas_pynetif.routing import RoutingTable
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -69,18 +72,18 @@ class NICDevice(Device):
 
     @contextmanager
     def run(self, connection: Connection, domain_uuid: str):
-        if (nic := netif.get_interface(self.identity(), True)) and nic and netif.InterfaceFlags.UP not in nic.flags:
+        if (nic := get_interface(self.identity(), True)) and nic and InterfaceFlags.UP not in nic.flags:
             nic.up()
 
         yield
 
     def is_available_impl(self) -> bool:
-        return self.identity() in netif.list_interfaces()
+        return link_exists(self.identity())
 
     def identity_impl(self) -> str:
         nic_attach = self.source
         if not nic_attach:
-            nic_attach = netif.RoutingTable().default_route_ipv4.interface
+            nic_attach = RoutingTable().default_route_ipv4.interface
         return nic_attach
 
     def validate_impl(self) -> list[tuple[str, str]]:
