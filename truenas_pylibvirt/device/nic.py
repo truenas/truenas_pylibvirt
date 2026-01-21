@@ -5,10 +5,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from truenas_pynetif.address.netlink import link_exists
+from truenas_pynetif.address.netlink import get_default_route, link_exists, netlink_route
 from truenas_pynetif.bits import InterfaceFlags
 from truenas_pynetif.netif import get_interface
-from truenas_pynetif.routing import RoutingTable
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -83,7 +82,9 @@ class NICDevice(Device):
     def identity_impl(self) -> str:
         nic_attach = self.source
         if not nic_attach:
-            nic_attach = RoutingTable().default_route_ipv4.interface
+            with netlink_route() as sock:
+                if default_route := get_default_route(sock):
+                    nic_attach = default_route.oif_name
         return nic_attach
 
     def validate_impl(self) -> list[tuple[str, str]]:
