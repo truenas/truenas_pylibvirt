@@ -40,10 +40,10 @@ class PCIDevice(Device):
                             xml_element(
                                 "address",
                                 attributes={
-                                    "domain": self.domain,
-                                    "bus": self.bus,
-                                    "slot": self.slot,
-                                    "function": self.function,
+                                    "domain": f'{int(self.domain, base=16)}',
+                                    "bus": f'{int(self.bus, base=16)}',
+                                    "slot": f'{int(self.slot, base=16)}',
+                                    "function": f'{int(self.function, base=16)}',
                                 },
                             ),
                         ],
