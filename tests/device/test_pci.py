@@ -16,10 +16,10 @@ def test_pci_device_exclusive():
 def test_pci_device_xml_generation(device_context, mock_device_delegate):
     """Test PCI device XML generation."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
@@ -41,10 +41,10 @@ def test_pci_device_xml_generation(device_context, mock_device_delegate):
 def test_pci_identity(mock_device_delegate):
     """Test PCI device identity returns the PCI device name."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
@@ -55,10 +55,10 @@ def test_pci_identity(mock_device_delegate):
 def test_pci_conflict_detection_no_conflict(mock_device_delegate):
     """Test PCI device conflict detection when no other VM uses it."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
@@ -79,10 +79,10 @@ def test_pci_conflict_detection_no_conflict(mock_device_delegate):
 def test_pci_conflict_detection_with_conflict(mock_device_delegate):
     """Test PCI device conflict detection when another VM uses the same device."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
@@ -121,10 +121,10 @@ def test_pci_conflict_detection_with_conflict(mock_device_delegate):
 def test_pci_no_conflict_with_self(mock_device_delegate):
     """Test that PCI device doesn't report conflict with itself."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
@@ -161,10 +161,10 @@ def test_pci_no_conflict_with_self(mock_device_delegate):
 def test_pci_no_conflict_with_inactive_vm(mock_device_delegate):
     """Test that inactive VMs don't cause conflicts."""
     device = PCIDevice(
-        domain="0x0000",
-        bus="0x01",
-        slot="0x00",
-        function="0x0",
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
         pci_device="pci_0000_01_00_0",
         device_delegate=mock_device_delegate
     )
