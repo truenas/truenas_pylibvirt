@@ -40,10 +40,10 @@ class PCIDevice(Device):
                             xml_element(
                                 "address",
                                 attributes={
-                                    "domain": self.domain,
-                                    "bus": self.bus,
-                                    "slot": self.slot,
-                                    "function": self.function,
+                                    "domain": f'0x{self.domain}',
+                                    "bus": f'0x{self.bus}',
+                                    "slot": f'0x{self.slot}',
+                                    "function": f'0x{self.function}',
                                 },
                             ),
                         ],
@@ -68,10 +68,10 @@ class PCIDevice(Device):
         for hostdev in domain_xml_root.findall(".//devices/hostdev[@type='pci']"):
             address = hostdev.find('.//source/address')
             if address is not None:
-                if (address.get('domain') == self.domain and
-                        address.get('bus') == self.bus and
-                        address.get('slot') == self.slot and
-                        address.get('function') == self.function):
+                if (address.get('domain') == f'0x{self.domain}' and
+                        address.get('bus') == f'0x{self.bus}' and
+                        address.get('slot') == f'0x{self.slot}' and
+                        address.get('function') == f'0x{self.function}'):
                     return True
         return False
 
