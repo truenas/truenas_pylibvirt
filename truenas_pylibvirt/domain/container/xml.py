@@ -85,19 +85,22 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
     def _misc_xml(self):
         children = []
 
-        # We always specify `idmap` configuration so that libvirt always enabled `user` namespace.
+        # Only generate idmap element if idmap configuration is specified.
+        # Without this element, libvirt will NOT create a user namespace,
+        # which is the correct behavior for privileged containers (idmap=None).
         idmap = self.domain.configuration.idmap
-        children.append(xml_element("idmap", children=[
-            xml_element("uid", attributes={
-                "start": "0",
-                "target": str(self.domain.configuration.idmap.uid.target) if idmap else "0",
-                "count": str(self.domain.configuration.idmap.uid.count) if idmap else "4294967295",
-            }),
-            xml_element("gid", attributes={
-                "start": "0",
-                "target": str(self.domain.configuration.idmap.gid.target) if idmap else "0",
-                "count": str(self.domain.configuration.idmap.gid.count) if idmap else "4294967295",
-            }),
-        ]))
+        if idmap:
+            children.append(xml_element("idmap", children=[
+                xml_element("uid", attributes={
+                    "start": "0",
+                    "target": str(idmap.uid.target),
+                    "count": str(idmap.uid.count),
+                }),
+                xml_element("gid", attributes={
+                    "start": "0",
+                    "target": str(idmap.gid.target),
+                    "count": str(idmap.gid.count),
+                }),
+            ]))
 
         return children
