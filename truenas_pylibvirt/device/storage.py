@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import enum
 import os
+from xml.etree import ElementTree
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -28,7 +31,7 @@ class BaseStorageDevice(Device):
     path: str
     serial: str | None
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         if self.type_ == StorageDeviceType.VIRTIO:
             target_bus = "virtio"
             target_dev = f"vd{disk_from_number(context.counters.next_virtual_device_no())}"
@@ -72,7 +75,7 @@ class BaseStorageDevice(Device):
     def _disk_type(self) -> str:
         raise NotImplementedError
 
-    def _source_xml(self, context: DeviceXmlContext):
+    def _source_xml(self, context: DeviceXmlContext) -> ElementTree.Element:
         raise NotImplementedError()
 
     def validate_impl(self) -> list[tuple[str, str]]:
@@ -101,7 +104,7 @@ class RawStorageDevice(BaseStorageDevice):
     def _disk_type(self) -> str:
         return "file"
 
-    def _source_xml(self, context: DeviceXmlContext):
+    def _source_xml(self, context: DeviceXmlContext) -> ElementTree.Element:
         return xml_element("source", attributes={"file": self.path})
 
 
@@ -111,7 +114,7 @@ class DiskStorageDevice(BaseStorageDevice):
     def _disk_type(self) -> str:
         return "block"
 
-    def _source_xml(self, context: DeviceXmlContext):
+    def _source_xml(self, context: DeviceXmlContext) -> ElementTree.Element:
         return xml_element("source", attributes={"dev": self.path})
 
     def validate_impl(self) -> list[tuple[str, str]]:

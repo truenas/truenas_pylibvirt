@@ -1,6 +1,7 @@
 import functools
 import os
 import re
+from typing import Any
 
 from pyudev import Context, Device as UdevDevice
 
@@ -15,7 +16,7 @@ def iommu_enabled() -> bool:
     return os.path.exists('/sys/kernel/iommu_groups')
 
 
-def get_pci_device_default_data() -> dict:
+def get_pci_device_default_data() -> dict[str, Any]:
     return {
         'capability': {
             'class': None,
@@ -38,7 +39,7 @@ def get_pci_device_default_data() -> dict:
     }
 
 
-def get_pci_device_details(obj: UdevDevice, iommu_info: dict) -> dict:
+def get_pci_device_details(obj: UdevDevice, iommu_info: dict[str, dict[str, Any]]) -> dict[str, Any]:
     data = get_pci_device_default_data()
     if not (igi := iommu_info.get(obj.sys_name)):
         data['error'] = 'Unable to determine iommu group'
@@ -94,7 +95,7 @@ def get_pci_device_details(obj: UdevDevice, iommu_info: dict) -> dict:
     return data
 
 
-def get_all_pci_devices_details() -> dict:
+def get_all_pci_devices_details() -> dict[str, dict[str, Any]]:
     result = dict()
     iommu_info = get_iommu_groups_info(get_critical_info=True)
     for i in Context().list_devices(subsystem='pci'):
@@ -104,7 +105,7 @@ def get_all_pci_devices_details() -> dict:
     return result
 
 
-def get_single_pci_device_details(device: str) -> dict:
+def get_single_pci_device_details(device: str) -> dict[str, dict[str, Any]]:
     result = dict()
     iommu_info = get_iommu_groups_info(get_critical_info=True)
     for i in filter(

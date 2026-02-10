@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree
 
 from ...device.display import DisplayDevice, DisplayDeviceType
 from ...xml import xml_element
@@ -21,7 +22,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
     def _type(self) -> str:
         return "kvm"
 
-    def _os_xml(self):
+    def _os_xml(self) -> ElementTree.Element:
         hvm_attributes = {}
         if self.domain.configuration.arch_type:
             hvm_attributes["arch"] = self.domain.configuration.arch_type
@@ -59,7 +60,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return xml_element("os", children=children)
 
-    def _cpu_xml(self):
+    def _cpu_xml(self) -> list[ElementTree.Element]:
         children = super()._cpu_xml()
 
         cpu_children = []
@@ -121,7 +122,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return children
 
-    def _memory_xml(self):
+    def _memory_xml(self) -> list[ElementTree.Element]:
         children = super()._memory_xml()
 
         # Memory Ballooning - this will be memory which will always be allocated to the VM
@@ -137,7 +138,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return children
 
-    def _clock_xml_children(self):
+    def _clock_xml_children(self) -> list[ElementTree.Element]:
         if self.domain.configuration.hyperv_enlightenments:
             return [
                 xml_element(
@@ -148,16 +149,17 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return []
 
-    def _devices_xml_children(self):
+    def _devices_xml_children(self) -> list[ElementTree.Element]:
         children = super()._devices_xml_children()
 
         display_device_available = False
         spice_server_available = False
-        for device in filter(lambda d: isinstance(d, DisplayDevice), self.domain.configuration.devices):
-            display_device_available = True
-            if device.type_ == DisplayDeviceType.SPICE:
-                spice_server_available = True
-                break
+        for device in self.domain.configuration.devices:
+            if isinstance(device, DisplayDevice):
+                display_device_available = True
+                if device.type_ == DisplayDeviceType.SPICE:
+                    spice_server_available = True
+                    break
 
         if self.domain.configuration.ensure_display_device and not display_device_available:
             # We should add a video device if there is no display device configured because most by
@@ -205,9 +207,9 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                 attributes={"model": "virtio", "autodeflate": "on"},
             ))
 
-        return children
+        return list(children)
 
-    def _features_xml_children(self):
+    def _features_xml_children(self) -> list[ElementTree.Element]:
         features = [
             xml_element("acpi"),
             xml_element("apic"),
@@ -245,7 +247,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return features
 
-    def _misc_xml(self):
+    def _misc_xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 "commandline",

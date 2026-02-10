@@ -4,7 +4,8 @@ import enum
 import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
+from xml.etree import ElementTree
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -31,7 +32,7 @@ class DisplayDevice(Device):
     password: str
     web: bool = True
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         # FIXME: Resolution is not respected when we have more then 1 display device as we are not able to bind
         #  video element to a graphic element
         return [
@@ -81,7 +82,7 @@ class DisplayDevice(Device):
         ]
 
     @contextmanager
-    def run(self, connection: Connection, domain_uuid: str):
+    def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
         process = None
         if self.type_ == DisplayDeviceType.SPICE:
             web_bind = f":{self.web_port}" if self.bind == "0.0.0.0" else f"{self.bind}:{self.web_port}"

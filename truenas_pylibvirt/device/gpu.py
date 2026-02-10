@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from xml.etree import ElementTree
 
 from .base import Device, DeviceXmlContext
 from .gpu_utils import GPUBase
@@ -10,7 +13,7 @@ class GPUDevice(Device):
     gpu_type: str
     pci_address: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         self.gpu = GPUBase.from_data({
             'pci_address': self.pci_address,
@@ -26,5 +29,5 @@ class GPUDevice(Device):
     def validate_impl(self) -> list[tuple[str, str]]:
         return self.gpu.validate()
 
-    def xml(self, context: DeviceXmlContext) -> list:
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         return self.gpu.xml()

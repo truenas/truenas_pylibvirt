@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from pyudev import Context, Device as UdevDevice
 
@@ -7,7 +8,7 @@ from pyudev import Context, Device as UdevDevice
 RE_USB_DEVICE = re.compile(r'^usb_(\d+)_(\d+)$')
 
 
-def get_usb_device_default_data() -> dict:
+def get_usb_device_default_data() -> dict[str, Any]:
     """Default structure for USB device data."""
     return {
         'capability': {
@@ -37,7 +38,7 @@ def parse_libvirt_device_name(device_name: str) -> tuple[str, str] | None:
     return None
 
 
-def get_usb_device_details(udev_device: UdevDevice) -> dict:
+def get_usb_device_details(udev_device: UdevDevice) -> dict[str, Any]:
     """Extract USB device details from udev device."""
     data = get_usb_device_default_data()
 
@@ -94,7 +95,7 @@ def get_usb_device_details(udev_device: UdevDevice) -> dict:
     return data
 
 
-def find_usb_device_by_libvirt_name(device_name: str) -> dict:
+def find_usb_device_by_libvirt_name(device_name: str) -> dict[str, Any]:
     """
     Find USB device by libvirt device name (e.g., usb_1_2).
 
@@ -170,7 +171,7 @@ def find_usb_device_by_ids(vendor_id: str, product_id: str) -> str | None:
     return None
 
 
-def get_all_usb_devices() -> dict:
+def get_all_usb_devices() -> dict[str, dict[str, Any]]:
     """
     Get all USB devices on the system.
 

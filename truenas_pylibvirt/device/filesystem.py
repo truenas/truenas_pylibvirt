@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
+from xml.etree import ElementTree
 
 from .base import Device, DeviceXmlContext
 from ..xml import xml_element
@@ -11,7 +14,7 @@ class FilesystemDevice(Device):
     target: str
     source: str
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         return [
             xml_element(
                 'filesystem',

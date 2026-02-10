@@ -2,13 +2,13 @@ from xml.etree import ElementTree
 
 
 def xml_element(
-        tag,
+        tag: str,
         *,
         attributes: dict[str, str] | None = None,
-        children: list | None = None,
+        children: list[ElementTree.Element] | None = None,
         text: str | None = None,
-):
-    element = ElementTree.Element(tag, **(attributes or {}))
+) -> ElementTree.Element:
+    element = ElementTree.Element(tag, **(attributes or {}))  # type: ignore[arg-type]
 
     for child in children or []:
         element.append(child)

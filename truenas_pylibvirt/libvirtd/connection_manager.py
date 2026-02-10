@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import threading
+from typing import Any
 
 import libvirt
 
@@ -19,12 +22,12 @@ class ConnectionManager:
         event_thread.setDaemon(True)
         event_thread.start()
 
-    def create(self, uri):
+    def create(self, uri: str) -> Connection:
         connection = Connection(self, uri)
         self.connections.append(connection)
         return connection
 
-    def open(self, uri):
+    def open(self, uri: str) -> Any:
         self.service_delegate.ensure_started()
 
         try:
@@ -32,9 +35,9 @@ class ConnectionManager:
         except libvirt.libvirtError as e:
             raise Error(f"Failed to open libvirt connection: {e}")
 
-    def _libvirt_error_handler(self, _, error):
+    def _libvirt_error_handler(self, _: Any, error: Any) -> None:
         pass
 
-    def _libvirt_event_loop(self):
+    def _libvirt_event_loop(self) -> None:
         while True:
             libvirt.virEventRunDefaultImpl()

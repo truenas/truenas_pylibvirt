@@ -31,9 +31,19 @@ where = ["."]
 include = ["truenas_pylibvirt*"]
 exclude = ["tests*"]
 
+[tool.setuptools.package-data]
+truenas_pylibvirt = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[tool.mypy]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["libvirt.*", "pyudev.*"]
+ignore_missing_imports = true

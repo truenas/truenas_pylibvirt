@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Any
+from xml.etree import ElementTree
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -15,8 +19,12 @@ class USBDevice(Device):
     device: str | None
     controller_type: str | None
 
-    def xml(self, context: DeviceXmlContext):
-        capability = self.get_usb_details()['capability']
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
+        usb_details = self.get_usb_details()
+        if usb_details is None:
+            return []
+
+        capability = usb_details['capability']
         children = [
             xml_element(
                 "source",
@@ -69,7 +77,7 @@ class USBDevice(Device):
     def identity_impl(self) -> str:
         return self.device or f"{self.product_id}--{self.vendor_id}"
 
-    def get_usb_details(self) -> dict | None:
+    def get_usb_details(self) -> dict[str, Any] | None:
         if self.device:
             return find_usb_device_by_libvirt_name(self.device)
         elif self.vendor_id and self.product_id:
@@ -80,7 +88,10 @@ class USBDevice(Device):
 
     def is_available_impl(self) -> bool:
         details = self.get_usb_details()
-        return details.get("available", False) and not details.get("error") if details else False
+        if details is None:
+            return False
+
+        return details.get("available", False) and not details.get("error")
 
     def validate_impl(self) -> list[tuple[str, str]]:
         verrors = []
@@ -115,7 +126,7 @@ class USBDevice(Device):
 
         return verrors
 
-    def _is_device_in_domain_xml(self, domain_xml_root) -> bool:
+    def _is_device_in_domain_xml(self, domain_xml_root: ElementTree.Element) -> bool:
         """Check if this USB device is present in the domain XML"""
         for hostdev in domain_xml_root.findall(".//devices/hostdev[@type='usb']"):
             # Check by vendor/product ID

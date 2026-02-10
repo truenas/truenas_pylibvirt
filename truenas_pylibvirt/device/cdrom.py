@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
+from xml.etree import ElementTree
 
 from .base import Device, DeviceXmlContext
 from .utils import disk_from_number
@@ -11,7 +14,7 @@ class CDROMDevice(Device):
 
     path: str
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         disk_number = context.counters.next_scsi_device_no()
         boot_number = context.counters.next_boot_no()
 

@@ -1,4 +1,5 @@
 import contextlib
+from typing import Any
 
 import libvirt
 
@@ -17,6 +18,8 @@ class VmDomain(BaseDomain):
             # Do not make a stat call to check if file exists or not
             with open(pid_path, 'r') as f:
                 return int(f.read())
+        return None
 
-    def undefine(self, libvirt_domain):
+    def undefine(self, libvirt_domain: Any) -> None:
         libvirt_domain.undefineFlags(libvirt.VIR_DOMAIN_UNDEFINE_KEEP_NVRAM)
+        return None

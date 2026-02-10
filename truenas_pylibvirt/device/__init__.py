@@ -1,5 +1,7 @@
-from .base import Device, DeviceDelegate  # noqa
+from __future__ import annotations
+from .base import Device  # noqa
 from .cdrom import CDROMDevice  # noqa
+from .delegate import DeviceDelegate  # noqa
 from .display import DisplayDevice, DisplayDeviceType  # noqa
 from .filesystem import FilesystemDevice # noqa
 from .gpu import GPUDevice  # noqa

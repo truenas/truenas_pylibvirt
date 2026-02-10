@@ -3,6 +3,7 @@ import contextlib
 import os.path
 import pathlib
 import re
+from typing import Any
 
 
 RE_DEVICE_NAME = re.compile(r'(\w+):(\w+):(\w+).(\w+)')
@@ -97,7 +98,7 @@ def get_bridge_bus_range(bridge_path: str) -> tuple[int, int]:
 
 def get_devices_behind_bridge(
     bridge_addr: str,
-    bus_to_devices: dict[tuple[int, int], list[str]] = None,
+    bus_to_devices: dict[tuple[int, int], list[str]] | None = None,
 ) -> list[str]:
     """
     Get all PCI devices behind a specific PCI bridge using proper bus ranges.
@@ -133,8 +134,8 @@ def get_devices_behind_bridge(
 
 def is_pci_bridge_critical(
     bridge_addr: str,
-    device_to_class: dict[str, int] = None,
-    bus_to_devices: dict[tuple[int, int], list[str]] = None
+    device_to_class: dict[str, int] | None = None,
+    bus_to_devices: dict[tuple[int, int], list[str]] | None = None
 ) -> bool:
     """
     Check if a PCI bridge has critical devices behind it.
@@ -149,7 +150,7 @@ def is_pci_bridge_critical(
         device_to_class, bus_to_devices = build_pci_device_cache()
 
     # Use internal recursive function with visited set for cycle detection
-    visited = set()
+    visited: set[str] = set()
     return _is_bridge_critical_recursive(
         bridge_addr, device_to_class, bus_to_devices, visited
     )
@@ -182,7 +183,10 @@ def _is_bridge_critical_recursive(
     return False
 
 
-def get_iommu_groups_info(get_critical_info: bool = False, pci_build_cache: tuple = None) -> dict[str, dict]:
+def get_iommu_groups_info(
+        get_critical_info: bool = False,
+        pci_build_cache: tuple[dict[str, int], dict[tuple[int, int], list[str]]] | None = None
+) -> dict[str, dict[str, Any]]:
     addresses = collections.defaultdict(list)
     final = dict()
     with contextlib.suppress(FileNotFoundError):

@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import contextlib
 import functools
 import os
 import pathlib
 from abc import ABC, abstractmethod
+from typing import Any
+from xml.etree import ElementTree
 
 from ..utils.gpu import get_gpus, parse_nvidia_info_file
 from ..utils.pci import get_single_pci_device_details, normalize_pci_address
@@ -11,26 +15,26 @@ from ..xml import xml_element
 
 class GPUBase(ABC):
 
-    _registry = {}
+    _registry: dict[str, type[GPUBase]] = {}
 
-    def __init__(self, pci_address: str, gpu_type: str, **kwargs):
+    def __init__(self, pci_address: str, gpu_type: str, **kwargs: Any) -> None:
         self.pci_address = pci_address
         self.gpu_type = gpu_type
 
-    def __init_subclass__(cls, gpu_type: str | None = None, **kwargs):
+    def __init_subclass__(cls, gpu_type: str | None = None, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         if gpu_type is not None:
             cls._registry[gpu_type.lower()] = cls
 
     @classmethod
-    def from_data(cls, data: dict) -> "GPUBase":
+    def from_data(cls, data: dict[str, Any]) -> GPUBase:
         return cls._registry[data['gpu_type'].lower()](**data)
 
     def is_available(self) -> bool:
         pci_device = self.pci_device_details()
         return all(d != 'vfio-pci' for d in pci_device['drivers']) if pci_device else False
 
-    def pci_device_details(self) -> dict:
+    def pci_device_details(self) -> dict[str, Any] | None:
         pci_addr = normalize_pci_address(self.pci_address)
         return get_single_pci_device_details(pci_addr).get(pci_addr)
 
@@ -62,7 +66,11 @@ class GPUBase(ABC):
         return verrors
 
     @abstractmethod
-    def xml(self):
+    def driver_xml(self) -> list[ElementTree.Element]:
+        ...
+
+    @abstractmethod
+    def xml(self) -> list[ElementTree.Element]:
         ...
 
 
@@ -97,7 +105,7 @@ class DRMBase(GPUBase):
             verrors.append(('pci_address', 'Unable to locate compute/render node for GPU'))
         return verrors
 
-    def xml(self) -> list:
+    def xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[
@@ -127,7 +135,7 @@ class AMD(DRMBase, gpu_type='AMD'):
             verrors.append(('gpu_type', f'{self.DRIVER_PATH!r} must exist for AMD GPUs'))
         return verrors
 
-    def driver_xml(self) -> list:
+    def driver_xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[
@@ -181,7 +189,7 @@ class NVIDIA(GPUBase, gpu_type='NVIDIA'):
 
         return verrors
 
-    def driver_xml(self) -> list:
+    def driver_xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[
@@ -192,7 +200,7 @@ class NVIDIA(GPUBase, gpu_type='NVIDIA'):
             ) for driver_path in self.DRIVERS_PATH
         ]
 
-    def xml(self) -> list:
+    def xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 'hostdev', attributes={'mode': 'capabilities', 'type': 'misc'}, children=[

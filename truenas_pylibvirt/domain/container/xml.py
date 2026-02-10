@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import shlex
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree
 
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
@@ -11,13 +14,13 @@ if TYPE_CHECKING:
 
 
 class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
-    domain: "ContainerDomain"
-    context: "ContainerDomainContext"
+    domain: ContainerDomain
+    context: ContainerDomainContext
 
     def _type(self) -> str:
         return "lxc"
 
-    def _os_xml(self):
+    def _os_xml(self) -> ElementTree.Element:
         init = shlex.split(self.domain.configuration.init)
         children = [
             xml_element("type", text="exe"),
@@ -40,7 +43,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return xml_element("os", children=children)
 
-    def _devices_xml_children(self):
+    def _devices_xml_children(self) -> list[ElementTree.Element]:
         devices_xml = [
             *super()._devices_xml_children(),
             xml_element(
@@ -70,7 +73,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return devices_xml
 
-    def _features_xml_children(self):
+    def _features_xml_children(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 "capabilities",
@@ -82,7 +85,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
             ),
         ]
 
-    def _misc_xml(self):
+    def _misc_xml(self) -> list[ElementTree.Element]:
         children = []
 
         # Only generate idmap element if idmap configuration is specified.

@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import contextlib
 from dataclasses import dataclass
 import os
 import pathlib
 import subprocess
+from typing import Any, Generator
 
 from ...error import Error
 from ..base.domain import BaseDomain
@@ -16,7 +19,7 @@ class ContainerDomain(BaseDomain):
     configuration: ContainerDomainConfiguration
 
     @contextlib.contextmanager
-    def run(self):
+    def run(self) -> Generator[ContainerDomainContext, None, None]:
         root = self.configuration.root
         idmapped_root = None
         if idmap := self.configuration.idmap:
@@ -62,11 +65,12 @@ class ContainerDomain(BaseDomain):
 
             with open(f'/proc/{pid}/task/{pid}/children') as f:
                 return int(f.read().split()[0])
+        return None
 
-    def undefine(self, libvirt_domain):
+    def undefine(self, libvirt_domain: Any) -> None:
         libvirt_domain.undefine()
 
-    def _x_mount_idmap(self, item: ContainerIdmapConfigurationItem):
+    def _x_mount_idmap(self, item: ContainerIdmapConfigurationItem) -> str:
         return f"0:{item.target}:{item.count}"
 
 

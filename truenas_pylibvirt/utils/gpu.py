@@ -1,7 +1,7 @@
 import collections
 import os
 import re
-from typing import TextIO
+from typing import Any, TextIO
 
 import pyudev
 
@@ -11,7 +11,7 @@ from .iommu import build_pci_device_cache, get_iommu_groups_info, GPU_CLASS_CODE
 RE_PCI_ADDR = re.compile(r'(?P<domain>.*):(?P<bus>.*):(?P<slot>.*)\.')
 
 
-def get_pci_device_description(pci_slot: str, subclass: str = None, model: str = None) -> str:
+def get_pci_device_description(pci_slot: str, subclass: str | None = None, model: str | None = None) -> str:
     """
     Get human-readable device description with PCI slot.
     Uses caching to avoid repeated lookups for the same device.
@@ -30,7 +30,7 @@ def get_pci_device_description(pci_slot: str, subclass: str = None, model: str =
         return pci_slot
 
 
-def parse_nvidia_info_file(file_obj: TextIO) -> tuple[dict, str]:
+def parse_nvidia_info_file(file_obj: TextIO) -> tuple[dict[str, str], str | None]:
     gpu, bus_loc = dict(), None
     for line in file_obj:
         k, v = line.split(':', 1)
@@ -41,7 +41,7 @@ def parse_nvidia_info_file(file_obj: TextIO) -> tuple[dict, str]:
     return gpu, bus_loc
 
 
-def get_nvidia_gpus() -> dict[str, dict]:
+def get_nvidia_gpus() -> dict[str, dict[str, str]]:
     """Don't be so complicated. Return basic information about
     NVIDIA devices (if any) that are connected."""
     gpus = dict()
@@ -78,14 +78,14 @@ def _get_gpu_description(gpu_dev: pyudev.Device, controller_type: str) -> str:
     if vendor and model:
         return f"{vendor} {model}"
     elif model:
-        return model
+        return str(model)
     elif vendor:
         return f"{vendor} {controller_type}"
     else:
         return controller_type
 
 
-def get_critical_devices_in_iommu_group_mapping(iommu_groups: dict) -> dict[str, set[str]]:
+def get_critical_devices_in_iommu_group_mapping(iommu_groups: dict[str, dict[str, Any]]) -> dict[str, set[str]]:
     iommu_groups_mapping_with_critical_devices = collections.defaultdict(set)
     for pci_slot, pci_details in iommu_groups.items():
         if pci_details['critical']:
@@ -93,7 +93,7 @@ def get_critical_devices_in_iommu_group_mapping(iommu_groups: dict) -> dict[str,
     return iommu_groups_mapping_with_critical_devices
 
 
-def get_gpus() -> list:
+def get_gpus() -> list[dict[str, Any]]:
     # Build PCI device cache once
     device_to_class, bus_to_devices = build_pci_device_cache()
 
@@ -165,7 +165,7 @@ def get_gpus() -> list:
         gpus.append({
             'addr': {
                 'pci_slot': addr,
-                **{k: addr_re.group(k) for k in ('domain', 'bus', 'slot')},
+                **({k: addr_re.group(k) for k in ('domain', 'bus', 'slot')} if addr_re else {}),
             },
             'description': _get_gpu_description(gpu_dev, controller_type),
             'devices': devices,

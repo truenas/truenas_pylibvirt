@@ -5,7 +5,7 @@ from xml.etree import ElementTree as etree
 
 
 @functools.cache
-def get_cpu_model_choices():
+def get_cpu_model_choices() -> dict[str, str]:
     """
     Parse CPU model choices from libvirt XML files.
     This function is cached to avoid re-parsing XML files on every call.

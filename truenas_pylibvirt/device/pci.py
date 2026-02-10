@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any, Generator, TYPE_CHECKING
+from xml.etree import ElementTree
 
 import libvirt
 
@@ -8,6 +12,9 @@ from ..error import Error
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
 from ..utils.pci import get_single_pci_device_details, iommu_enabled
+
+if TYPE_CHECKING:
+    from ..libvirtd.connection import Connection
 
 
 logger = logging.getLogger(__name__)
@@ -24,7 +31,7 @@ class PCIDevice(Device):
     function: str
     pci_device: str
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         return [
             xml_element(
                 "hostdev",
@@ -56,14 +63,14 @@ class PCIDevice(Device):
         pci_device = self.get_pci_device_details()
         return pci_device['available'] if pci_device else False
 
-    def get_pci_device_details(self) -> dict | None:
+    def get_pci_device_details(self) -> dict[str, Any] | None:
         pci_device = get_single_pci_device_details(self.pci_device)
         return pci_device[self.pci_device] if pci_device else None
 
     def identity_impl(self) -> str:
         return self.pci_device
 
-    def _is_device_in_domain_xml(self, domain_xml_root) -> bool:
+    def _is_device_in_domain_xml(self, domain_xml_root: ElementTree.Element) -> bool:
         """Check if this PCI device is present in the domain XML"""
         for hostdev in domain_xml_root.findall(".//devices/hostdev[@type='pci']"):
             address = hostdev.find('.//source/address')
@@ -76,7 +83,7 @@ class PCIDevice(Device):
         return False
 
     @contextmanager
-    def run(self, connection, domain_uuid: str):
+    def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
         """
         Manage PCI device lifecycle:
         1. Detach from host driver on entry

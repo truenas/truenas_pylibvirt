@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import logging
 from contextlib import ExitStack, contextmanager
-from typing import TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, Generator, Self
 
 
 if TYPE_CHECKING:
@@ -14,24 +14,23 @@ logger = logging.getLogger(__name__)
 
 
 class StartedDevice:
-    def __init__(self, device: Device, connection: Connection, domain_uuid: str):
+    def __init__(self, device: Device, connection: Connection, domain_uuid: str) -> None:
         self.connection = connection
         self.device = device
         self.exit_stack = ExitStack()
         self.context = self.exit_stack.enter_context(self.device.run(connection, domain_uuid))
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         self.exit_stack.close()
 
 
 class DeviceManager:
-
-    def __init__(self, devices: list[Device], domain_uuid: str):
+    def __init__(self, devices: list[Device], domain_uuid: str) -> None:
         self.devices: list[Device] = devices
         self.domain_uuid = domain_uuid
 
     @contextmanager
-    def start(self, connection: Connection):
+    def start(self, connection: Connection) -> Generator[Self, None, None]:
         started_devices = []
 
         try:
