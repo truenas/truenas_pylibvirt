@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+import logging
+from typing import Generator, TYPE_CHECKING
 from xml.etree import ElementTree
 
 import libvirt
@@ -14,6 +14,7 @@ from .delegate import DeviceDelegate
 
 
 if TYPE_CHECKING:
+    from ..domain.start_validator import StartValidationContext
     from ..libvirtd.connection import Connection
 
 logger = logging.getLogger(__name__)
@@ -32,16 +33,16 @@ class Device(ABC):
     # Override in subclasses that require exclusive access (can only be used by one VM at a time)
     EXCLUSIVE_DEVICE = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.device_delegate is None:
             raise TypeError('Device delegate must not be None')
 
     @abstractmethod
-    def xml(self, context: DeviceXmlContext) -> list:
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         ...
 
     @contextmanager
-    def run(self, connection: Connection, domain_uuid: str):
+    def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
         yield
 
     def is_available(self) -> bool:
@@ -64,7 +65,7 @@ class Device(ABC):
     def validate_impl(self) -> list[tuple[str, str]]:
         return []
 
-    def validate_start(self, context) -> list[tuple[str, str]]:
+    def validate_start(self, context: StartValidationContext) -> list[tuple[str, str]]:
         """
         Validate device can be started.
         This is different from validate() which validates configuration.
@@ -88,11 +89,11 @@ class Device(ABC):
         errors.extend(self.validate_start_impl(context))
         return errors
 
-    def validate_start_impl(self, context) -> list[tuple[str, str]]:
+    def validate_start_impl(self, context: StartValidationContext) -> list[tuple[str, str]]:
         """Override in subclasses for device-specific start validation beyond exclusivity checks"""
         return []
 
-    def _is_in_use_by_other_vms(self, connection, exclude_domain_uuid: str) -> tuple[bool, str | None]:
+    def _is_in_use_by_other_vms(self, connection: Connection, exclude_domain_uuid: str) -> tuple[bool, str | None]:
         """
         Check if device is used by any other running VM.
         Returns: (is_in_use, vm_name_using_it)
@@ -122,7 +123,7 @@ class Device(ABC):
             logger.warning(f"Failed to check device conflicts: {e}")
             return False, None
 
-    def _is_device_in_domain_xml(self, domain_xml_root) -> bool:
+    def _is_device_in_domain_xml(self, domain_xml_root: ElementTree.Element) -> bool:
         """
         Override to check if this device is present in the domain XML.
         Child classes should implement this method and return True if the device is found.

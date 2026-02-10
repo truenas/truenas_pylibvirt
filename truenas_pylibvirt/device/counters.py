@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from collections import defaultdict
 from itertools import count
 
 
 class Counters:
-    def __init__(self):
+    def __init__(self) -> None:
         self._boot_no = count(1)
         self._scsi_device_no = count(1)
         self._usb_controller_no = count(1)
@@ -12,14 +14,14 @@ class Counters:
         self._usb_controllers_no["nec-xhci"] = 0
         self._virtual_device_no = count(1)
 
-    def next_boot_no(self):
+    def next_boot_no(self) -> int:
         return next(self._boot_no)
 
-    def next_scsi_device_no(self):
+    def next_scsi_device_no(self) -> int:
         return next(self._scsi_device_no)
 
-    def usb_controller_no(self, type_: str):
+    def usb_controller_no(self, type_: str) -> int:
         return self._usb_controllers_no[type_]
 
-    def next_virtual_device_no(self):
+    def next_virtual_device_no(self) -> int:
         return next(self._virtual_device_no)

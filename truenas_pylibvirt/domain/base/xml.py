@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
@@ -9,14 +11,15 @@ from .configuration import Time
 
 if TYPE_CHECKING:
     from .domain import BaseDomain
+    from ..container.domain import ContainerDomainContext
 
 
 class BaseDomainXmlGenerator:
-    def __init__(self, domain: "BaseDomain", context):
+    def __init__(self, domain: BaseDomain, context: ContainerDomainContext) -> None:
         self.domain = domain
         self.context = context
 
-    def generate(self):
+    def generate(self) -> ElementTree.Element:
         return xml_element(
             "domain",
             attributes={
@@ -28,13 +31,13 @@ class BaseDomainXmlGenerator:
 
     def _element(
             self,
-            tag,
+            tag: str,
             *,
             attributes: dict[str, str] | None = None,
-            children: list | None = None,
+            children: list[ElementTree.Element] | None = None,
             text: str | None = None,
-    ):
-        element = ElementTree.Element(tag, **(attributes or {}))
+    ) -> ElementTree.Element:
+        element = ElementTree.Element(tag, **(attributes or {}))  # type: ignore[arg-type]
 
         for child in children or []:
             element.append(child)
@@ -47,7 +50,7 @@ class BaseDomainXmlGenerator:
     def _type(self) -> str:
         raise NotImplementedError()
 
-    def _children(self):
+    def _children(self) -> list[ElementTree.Element]:
         children = [
             xml_element("name", text=self.domain.configuration.uuid),
             xml_element("uuid", text=self.domain.configuration.uuid),
@@ -74,10 +77,10 @@ class BaseDomainXmlGenerator:
 
         return children
 
-    def _os_xml(self):
+    def _os_xml(self) -> ElementTree.Element:
         raise NotImplementedError()
 
-    def _cpu_xml(self):
+    def _cpu_xml(self) -> list[ElementTree.Element]:
         if self.domain.configuration.vcpus is None and not self.domain.configuration.cpuset:
             return []
 
@@ -91,7 +94,7 @@ class BaseDomainXmlGenerator:
             )
         ]
 
-    def _memory_xml(self):
+    def _memory_xml(self) -> list[ElementTree.Element]:
         return [
             xml_element(
                 "memory",
@@ -101,20 +104,20 @@ class BaseDomainXmlGenerator:
             )
         ]
 
-    def _clock_xml(self):
+    def _clock_xml(self) -> ElementTree.Element:
         return xml_element(
             "clock",
             attributes={"offset": "localtime" if self.domain.configuration.time == Time.LOCAL else "utc"},
             children=self._clock_xml_children(),
         )
 
-    def _clock_xml_children(self):
+    def _clock_xml_children(self) -> list[ElementTree.Element]:
         return []
 
-    def _devices_xml(self):
+    def _devices_xml(self) -> ElementTree.Element:
         return xml_element("devices", children=self._devices_xml_children())
 
-    def _devices_xml_children(self):
+    def _devices_xml_children(self) -> list[ElementTree.Element]:
         devices = []
         counters = Counters()
         context = DeviceXmlContext(counters)
@@ -123,11 +126,11 @@ class BaseDomainXmlGenerator:
 
         return devices
 
-    def _features_xml(self):
+    def _features_xml(self) -> ElementTree.Element:
         return xml_element("features", children=self._features_xml_children())
 
-    def _features_xml_children(self):
+    def _features_xml_children(self) -> list[ElementTree.Element]:
         return []
 
-    def _misc_xml(self):
+    def _misc_xml(self) -> list[ElementTree.Element]:
         return []

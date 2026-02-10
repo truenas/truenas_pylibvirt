@@ -3,7 +3,8 @@ from __future__ import annotations
 import enum
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
+from xml.etree import ElementTree
 
 from truenas_pynetif.address.netlink import get_default_route, link_exists, netlink_route
 from truenas_pynetif.bits import InterfaceFlags
@@ -36,7 +37,7 @@ class NICDevice(Device):
     mac: str | None
     trust_guest_rx_filters: bool
 
-    def xml(self, context: DeviceXmlContext):
+    def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         children = []
         if self.model:
             children.append(xml_element("model", attributes={"type": self.model.value.lower()}))
@@ -70,7 +71,7 @@ class NICDevice(Device):
                 ]
 
     @contextmanager
-    def run(self, connection: Connection, domain_uuid: str):
+    def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
         if (nic := get_interface(self.identity(), True)) and nic and InterfaceFlags.UP not in nic.flags:
             nic.up()
 
@@ -84,6 +85,7 @@ class NICDevice(Device):
         if not nic_attach:
             with netlink_route() as sock:
                 if default_route := get_default_route(sock):
+                    assert default_route.oif_name is not None
                     nic_attach = default_route.oif_name
         return nic_attach
 

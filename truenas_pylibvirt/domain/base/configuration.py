@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import enum
 
@@ -25,23 +27,23 @@ class BaseDomainConfiguration:
 
     @property
     def cpuset_list(self) -> list[int]:
-        return parse_numeric_set(self.cpuset)
+        return parse_numeric_set(self.cpuset or '')
 
 
-def parse_numeric_set(value):
+def parse_numeric_set(value: str) -> list[int]:
     if value == '':
         return []
 
-    cpus = {}
+    cpus: dict[int, None] = {}
     parts = value.split(',')
     for part in parts:
-        part = part.split('-')
-        if len(part) == 1:
-            cpu = int(part[0])
+        part_range = part.split('-')
+        if len(part_range) == 1:
+            cpu = int(part_range[0])
             cpus[cpu] = None
-        elif len(part) == 2:
-            start = int(part[0])
-            end = int(part[1])
+        elif len(part_range) == 2:
+            start = int(part_range[0])
+            end = int(part_range[1])
             if start >= end:
                 raise ValueError(f'End of range has to greater that start: {start}-{end}')
             for cpu in range(start, end + 1):

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from contextlib import ExitStack
 import logging
 import threading
 import time
+from typing import Any
 from xml.etree import ElementTree
 
 from ..error import Error, DomainDoesNotExistError
@@ -24,7 +27,7 @@ class StartedDomain:
         self.exit_stack.enter_context(self.domain.device_manager.start(connection))
         self.context = self.exit_stack.enter_context(self.domain.run())
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         self.exit_stack.close()
 
 
@@ -37,7 +40,7 @@ class DomainManager:
 
         self.connection.register_domain_event_callback(self._domain_event_callback)
 
-    def start(self, domain: BaseDomain):
+    def start(self, domain: BaseDomain) -> None:
         with self.started_domains_lock:
             if started_domain := self.started_domains.pop(domain.configuration.uuid, None):
                 if libvirt_domain := self.connection.get_domain(domain.configuration.uuid):
@@ -81,7 +84,7 @@ class DomainManager:
                 else:
                     started_domain.cleanup()
 
-    def shutdown(self, domain: BaseDomain, shutdown_timeout: int | None = None):
+    def shutdown(self, domain: BaseDomain, shutdown_timeout: int | None = None) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
 
         shutdown_timeout = shutdown_timeout or domain.configuration.shutdown_timeout
@@ -97,11 +100,11 @@ class DomainManager:
             shutdown_timeout -= 1
             time.sleep(1)
 
-    def destroy(self, domain: BaseDomain):
+    def destroy(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         self._destroy(libvirt_domain)
 
-    def _destroy(self, libvirt_domain):
+    def _destroy(self, libvirt_domain: Any) -> None:
         try:
             libvirt_domain.destroy()
         except Exception:
@@ -113,11 +116,11 @@ class DomainManager:
 
             raise
 
-    def suspend(self, domain: BaseDomain):
+    def suspend(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         libvirt_domain.suspend()
 
-    def resume(self, domain: BaseDomain):
+    def resume(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain(domain)
 
         if self.connection.domain_state(libvirt_domain) != DomainState.PAUSED:
@@ -125,7 +128,7 @@ class DomainManager:
 
         libvirt_domain.resume()
 
-    def delete(self, domain: BaseDomain):
+    def delete(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain(domain)
         if self.connection.domain_state(libvirt_domain) in [DomainState.RUNNING, DomainState.PAUSED]:
             self._destroy(libvirt_domain)
@@ -135,14 +138,14 @@ class DomainManager:
 
         domain.undefine(libvirt_domain)
 
-    def _libvirt_domain(self, domain: BaseDomain):
+    def _libvirt_domain(self, domain: BaseDomain) -> Any:
         libvirt_domain = self.connection.get_domain(domain.configuration.uuid)
         if libvirt_domain is None:
             raise DomainDoesNotExistError(f"Domain {domain.configuration.name!r} does not exist")
 
         return libvirt_domain
 
-    def _libvirt_domain_for_stop(self, domain: BaseDomain):
+    def _libvirt_domain_for_stop(self, domain: BaseDomain) -> Any:
         libvirt_domain = self._libvirt_domain(domain)
 
         if not libvirt_domain.isActive():
@@ -150,7 +153,7 @@ class DomainManager:
 
         return libvirt_domain
 
-    def _domain_event_callback(self, event: DomainEvent):
+    def _domain_event_callback(self, event: DomainEvent) -> None:
         libvirt_domain = self.connection.get_domain(event.uuid)
         if libvirt_domain is None:
             return

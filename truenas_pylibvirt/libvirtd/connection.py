@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 import enum
 import functools
 import logging
 import os
-from typing import Callable, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 import libvirt
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @functools.cache
-def kvm_supported():
+def kvm_supported() -> bool:
     return os.path.exists('/dev/kvm')
 
 
@@ -61,14 +63,14 @@ DomainEventCallback = Callable[[DomainEvent], None]
 
 
 class Connection:
-    def __init__(self, manager: "ConnectionManager", uri: str):
+    def __init__(self, manager: ConnectionManager, uri: str):
         self.manager = manager
         self.uri = uri
         self._connection = None
         self._domain_event_callbacks: list[DomainEventCallback] = []
 
     @property
-    def connection(self):
+    def connection(self) -> Any:
         # We see isAlive call failed for a user in NAS-109072, it would be better
         # if we handle this to ensure that system recognises libvirt connection
         # is no longer active and a new one should be initiated.
@@ -82,17 +84,17 @@ class Connection:
         self._open()
         return self._connection
 
-    def register_domain_event_callback(self, callback: DomainEventCallback):
+    def register_domain_event_callback(self, callback: DomainEventCallback) -> None:
         self._domain_event_callbacks.append(callback)
 
-    def list_domains(self):
-        return self.connection.listAllDomains()
+    def list_domains(self) -> list[Any]:
+        return list(self.connection.listAllDomains())
 
-    def define_domain(self, xml: str):
+    def define_domain(self, xml: str) -> None:
         if not self.connection.defineXML(xml):
             raise Error("Failed to define a domain from an XML definition")
 
-    def get_domain(self, uuid: str):
+    def get_domain(self, uuid: str) -> Any:
         try:
             return self.connection.lookupByName(uuid)
         except libvirt.libvirtError as e:
@@ -101,10 +103,10 @@ class Connection:
 
             raise
 
-    def domain_memory_usage(self, domain) -> int:
-        return domain.memoryStats().get("actual", 0) * 1024
+    def domain_memory_usage(self, domain: Any) -> int:
+        return int(domain.memoryStats().get("actual", 0) * 1024)
 
-    def domain_state(self, domain) -> DomainState:
+    def domain_state(self, domain: Any) -> DomainState:
         return {
             libvirt.VIR_DOMAIN_NOSTATE: DomainState.NOSTATE,
             libvirt.VIR_DOMAIN_RUNNING: DomainState.RUNNING,
@@ -116,7 +118,7 @@ class Connection:
             libvirt.VIR_DOMAIN_PMSUSPENDED: DomainState.PMSUSPENDED,
         }[domain.state()[0]]
 
-    def domain_event(self, event: int):
+    def domain_event(self, event: int) -> VirDomainEvent:
         return {
             libvirt.VIR_DOMAIN_EVENT_DEFINED: VirDomainEvent.DEFINED,
             libvirt.VIR_DOMAIN_EVENT_UNDEFINED: VirDomainEvent.UNDEFINED,
@@ -129,7 +131,7 @@ class Connection:
             libvirt.VIR_DOMAIN_EVENT_CRASHED: VirDomainEvent.CRASHED
         }.get(event, VirDomainEvent.UNKNOWN)
 
-    def _open(self):
+    def _open(self) -> None:
         connection = self.manager.open(self.uri)
 
         connection.domainEventRegister(self._libvirt_event_callback, None)
@@ -137,7 +139,7 @@ class Connection:
 
         self._connection = connection
 
-    def _close(self):
+    def _close(self) -> None:
         try:
             self.connection.close()
         except libvirt.libvirtError as e:
@@ -145,7 +147,7 @@ class Connection:
 
         self._connection = None
 
-    def _libvirt_event_callback(self, conn, dom, event, detail, opaque):
+    def _libvirt_event_callback(self, conn: Any, dom: Any, event: int, detail: int, opaque: Any) -> None:
         domain_event = DomainEvent(uuid=dom.name(), event=self.domain_event(event))
         for callback in self._domain_event_callbacks:
             try:

@@ -6,9 +6,9 @@ class DomainManagers:
     def __init__(
             self,
             connection_manager: ConnectionManager,
-            containers_uri="lxc:///system?socket=/run/truenas_libvirt/libvirt-sock",
-            vms_uri="qemu+unix:///system?socket=/run/truenas_libvirt/libvirt-sock",
-    ):
+            containers_uri: str = "lxc:///system?socket=/run/truenas_libvirt/libvirt-sock",
+            vms_uri: str = "qemu+unix:///system?socket=/run/truenas_libvirt/libvirt-sock",
+    ) -> None:
         self.connection_manager = connection_manager
 
         self.containers_connection = self.connection_manager.create(containers_uri)
