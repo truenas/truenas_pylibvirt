@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator
 from xml.etree import ElementTree
 
-from truenas_pynetif.address.netlink import get_default_route, link_exists, netlink_route
+from truenas_pynetif.address.get_links import get_link
+from truenas_pynetif.address.link import set_link_up
+from truenas_pynetif.address.netlink import get_default_route, netlink_route
 from truenas_pynetif.bits import InterfaceFlags
-from truenas_pynetif.netif import get_interface
+from truenas_pynetif.netlink import DeviceNotFound
 
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
@@ -72,13 +74,24 @@ class NICDevice(Device):
 
     @contextmanager
     def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
-        if (nic := get_interface(self.identity(), True)) and nic and InterfaceFlags.UP not in nic.flags:
-            nic.up()
-
+        with netlink_route() as sock:
+            try:
+                link = get_link(sock, self.identity())
+                # Check if interface is UP by testing the IFF_UP flag
+                if not (link.flags & InterfaceFlags.UP.value):
+                    set_link_up(sock, index=link.index)
+            except DeviceNotFound:
+                # Interface doesn't exist, nothing to bring up
+                pass
         yield
 
     def is_available_impl(self) -> bool:
-        return link_exists(self.identity())
+        with netlink_route() as sock:
+            try:
+                get_link(sock, self.identity())
+                return True
+            except DeviceNotFound:
+                return False
 
     def identity_impl(self) -> str:
         nic_attach = self.source
