@@ -69,7 +69,7 @@ def get_usb_device_details(udev_device: UdevDevice) -> dict[str, Any]:
     data['capability']['product'] = props.get('ID_MODEL_FROM_DATABASE') or props.get('ID_MODEL') or None
 
     # Check if all required keys have values (matching middleware behavior)
-    required_keys = ['bus', 'device', 'vendor_id', 'product_id', 'vendor', 'product']
+    required_keys = ['bus', 'device', 'vendor_id', 'product_id']
     missing_keys = [k for k in required_keys if data['capability'][k] is None]
 
     if missing_keys:
