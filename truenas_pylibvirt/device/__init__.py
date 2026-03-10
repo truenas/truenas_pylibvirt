@@ -9,3 +9,22 @@ from .nic import NICDevice, NICDeviceType, NICDeviceModel  # noqa
 from .pci import PCIDevice  # noqa
 from .storage import DiskStorageDevice, RawStorageDevice, StorageDeviceType, StorageDeviceIoType  # noqa
 from .usb import USBDevice  # noqa
+
+__all__ = [
+    'CDROMDevice',
+    'Device',
+    'DeviceDelegate',
+    'DiskStorageDevice',
+    'DisplayDevice',
+    'DisplayDeviceType',
+    'FilesystemDevice',
+    'GPUDevice',
+    'NICDevice',
+    'NICDeviceModel',
+    'NICDeviceType',
+    'PCIDevice',
+    'RawStorageDevice',
+    'StorageDeviceIoType',
+    'StorageDeviceType',
+    'USBDevice',
+]

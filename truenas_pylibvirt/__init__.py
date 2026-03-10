@@ -16,3 +16,29 @@ from .error import Error, DomainDoesNotExistError  # noqa
 from .libvirtd.connection import Connection  # noqa
 from .libvirtd.connection_manager import ConnectionManager  # noqa
 from .libvirtd.service_delegate import ServiceDelegate  # noqa
+
+__all__ = [
+    'ContainerCapabilitiesPolicy',
+    'ContainerDomain',
+    'ContainerDomainConfiguration',
+    'ContainerIdmapConfiguration',
+    'ContainerIdmapConfigurationItem',
+    'Connection',
+    'ConnectionManager',
+    'BaseDomain',
+    'DiskStorageDevice',
+    'DomainDoesNotExistError',
+    'DomainManagers',
+    'Error',
+    'NICDevice',
+    'NICDeviceModel',
+    'NICDeviceType',
+    'ServiceDelegate',
+    'StorageDeviceIoType',
+    'StorageDeviceType',
+    'Time',
+    'VmBootloader',
+    'VmCpuMode',
+    'VmDomain',
+    'VmDomainConfiguration',
+]
