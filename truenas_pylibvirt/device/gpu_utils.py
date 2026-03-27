@@ -116,6 +116,9 @@ class DRMBase(GPUBase):
             ),
         ]
 
+    def driver_xml(self) -> list[ElementTree.Element]:
+        return []
+
 
 class AMD(DRMBase, gpu_type='AMD'):
 
