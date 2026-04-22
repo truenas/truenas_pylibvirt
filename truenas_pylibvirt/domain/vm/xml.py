@@ -75,7 +75,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         ))
 
         if self.domain.configuration.cpu_mode == VmCpuMode.CUSTOM:
-            if self.domain.configuration.cpu_model and get_cpu_model_choices(self.domain.configuration.cpu_model):
+            if (model := self.domain.configuration.cpu_model) and model in get_cpu_model_choices():
                 # Right now this is best effort for the domain to start with specified CPU Model and not fallback
                 # However if some features are missing in the host, qemu will right now still start the domain
                 # and mark them as missing. We should perhaps make this configurable in the future to control
@@ -83,7 +83,7 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
                 cpu_children.append(xml_element(
                     "model",
                     attributes={"fallback": "forbid"},
-                    text=self.domain.configuration.cpu_model,
+                    text=model,
                 ))
 
         if self.domain.configuration.cpu_mode == VmCpuMode.HOST_PASSTHROUGH:
