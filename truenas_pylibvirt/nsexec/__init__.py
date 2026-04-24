@@ -40,6 +40,7 @@ primitives are exposed for callers that need finer control.
 """
 
 import sys
+from types import MappingProxyType
 
 from ._native import (
     CLONE_NEWIPC,
@@ -97,30 +98,40 @@ def _enumerate_capabilities() -> frozenset[str]:
     for i in range(cap_max_bits()):
         name = cap_to_name(i)
         if name.startswith("cap_"):
-            names.add(name[len("cap_"):])
+            names.add(name[len("cap_") :])
     return frozenset(names)
 
 
 ALL_CAPABILITIES = _enumerate_capabilities()
 
 
-def _derive_caps(policy: str, capabilities_state: dict):
-    """Return (drop_names, enabled_names) from the raw policy + state."""
-    policy = policy.upper()
-    if policy == "DEFAULT":
-        drop = [
-            n for n in DEFAULT_POLICY_DROPS if capabilities_state.get(n) is not True
-        ]
-        drop += [n for n, on in capabilities_state.items() if not on]
-    elif policy == "ALLOW":
-        drop = [n for n, on in capabilities_state.items() if not on]
-    elif policy == "DENY":
-        drop = [n for n in ALL_CAPABILITIES if capabilities_state.get(n) is not True]
-    else:
-        raise ValueError(f"unknown capabilities policy: {policy!r}")
+# Each policy picks the baseline set of caps that are "off unless opted in".
+# The final drop set is then ``(baseline - user-enabled) | user-disabled``:
+# * DEFAULT — drop what libvirt's lxc driver drops by default
+# * ALLOW   — drop nothing except what the user explicitly turned off
+# * DENY    — drop everything except what the user explicitly turned on
+_POLICY_BASELINES = MappingProxyType(
+    {
+        "DEFAULT": frozenset(DEFAULT_POLICY_DROPS),
+        "ALLOW": frozenset(),
+        "DENY": ALL_CAPABILITIES,
+    }
+)
 
-    enabled = [n for n, on in capabilities_state.items() if on]
-    return drop, enabled
+
+def _derive_caps(policy: str, capabilities_state: dict) -> tuple[list[str], list[str]]:
+    """Return (drop_names, enabled_names) from the raw policy + state."""
+    try:
+        baseline = _POLICY_BASELINES[policy.upper()]
+    except KeyError:
+        raise ValueError(f"unknown capabilities policy: {policy!r}")
+    enabled, disabled = set(), set()
+    for n, on in capabilities_state.items():
+        if on:
+            enabled.add(n)
+        else:
+            disabled.add(n)
+    return sorted((baseline - enabled) | disabled), sorted(enabled)
 
 
 def build_argv_for_shell(
