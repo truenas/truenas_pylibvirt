@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=74.1.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "truenas_pylibvirt"
-version = "0.0.1"
+version = "0.1.0"
 description = "TrueNAS libvirt wrapper"
 requires-python = ">=3.11"
 classifiers = [
@@ -33,6 +33,11 @@ exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 truenas_pylibvirt = ["py.typed"]
+
+[[tool.setuptools.ext-modules]]
+name = "truenas_pylibvirt.nsexec._native"
+sources = ["truenas_pylibvirt/nsexec/_native.c"]
+libraries = ["cap"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

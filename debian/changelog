@@ -1,3 +1,31 @@
+truenas-pylibvirt (0.1.0-1) unstable; urgency=medium
+
+  * Add nsexec subpackage for entering a running libvirt-LXC container as
+    a child process with the container's configured capability restrictions
+    applied to the final exec. Sanctioned entry point is
+    `python3 -m truenas_pylibvirt.nsexec`; direct use of the C primitives
+    from a persistent multi-threaded daemon is unsafe (see module docstring).
+  * Ship a C extension (truenas_pylibvirt.nsexec._native) linked against
+    libcap, exposing setns, drop_bounding, cap_from_name,
+    cap_set_proc_from_text, the CLONE_NEW* constants, and the composite
+    enter_and_exec entry point. enter_and_exec takes caller-supplied
+    namespace fds, switches the non-user namespaces first, then the user
+    namespace, applies bounding-set drops (prctl(PR_CAPBSET_DROP)), applies
+    the explicit effective+permitted capability set (capset(2)), forks so
+    the exec'd shell lands in the target's PID namespace, assumes container
+    root in the child (setgroups/setgid/setuid) so writes to idmapped
+    mounts translate correctly, and relays the child's exit status.
+  * Namespace fds are obtained via libvirt (virDomainLxcOpenNamespace,
+    exposed in Python as libvirt_lxc.lxcOpenNamespace) instead of opening
+    /proc/<pid>/ns/* directly, removing the PID-reuse race between lookup
+    and setns.
+  * Export DEFAULT_CONTAINERS_URI and DEFAULT_VMS_URI from the top-level
+    package; DomainManagers defaults now reference these constants.
+  * Package is architecture-specific (was arch: all). Add libcap-dev to
+    Build-Depends.
+
+ -- TrueNAS Engineering <dev@truenas.com>  Fri, 24 Apr 2026 10:00:00 -0500
+
 truenas-pylibvirt (0.0.1-1) unstable; urgency=medium
 
   * Initial release
