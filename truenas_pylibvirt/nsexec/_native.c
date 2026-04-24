@@ -115,17 +115,20 @@ py_cap_set_proc_from_text(PyObject *self, PyObject *args)
 /*
  * enter_and_exec(user_fd, other_fds, drop_names, caps_text, argv) -> int
  *
- *   user_fd      (int):                 fd for CLONE_NEWUSER, or -1 to skip
- *   other_fds    (list[(int, int)]):    (fd, nstype_flag) tuples for the
- *                                       non-user namespaces, applied in order
- *                                       before the user-ns switch
- *   drop_names   (list[str]):           libcap names (e.g. "cap_lease") to
- *                                       drop from CapBnd
- *   caps_text    (str):                 libcap spec
- *                                       (e.g. "cap_net_admin,cap_net_raw+ep"),
- *                                       or empty string to skip
- *   argv         (list[str]):           command to exec inside the container
- *                                       (argv[0] is the path to execv)
+ *   user_fd      (int):         fd for the container's user namespace, or
+ *                               -1 to skip the user-ns switch
+ *   other_fds    (list[int]):   fds for the non-user namespaces, applied
+ *                               in order via setns(fd, 0) before the
+ *                               user-ns switch. We pass nstype=0 (accept
+ *                               any namespace type) so this code doesn't
+ *                               need to know which fd is which kind.
+ *   drop_names   (list[str]):   libcap names (e.g. "cap_lease") to drop
+ *                               from CapBnd
+ *   caps_text    (str):         libcap spec
+ *                               (e.g. "cap_net_admin,cap_net_raw+ep"),
+ *                               or empty string to skip
+ *   argv         (list[str]):   command to exec inside the container
+ *                               (argv[0] is the path to execv)
  *
  * Ownership: takes ownership of `user_fd` and every fd in `other_fds`;
  * they are closed by this function (either after successful setns or on
@@ -156,7 +159,6 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     Py_ssize_t n_drops = PyList_GET_SIZE(drop_names_list);
 
     int *other_fd = NULL;
-    int *other_nstype = NULL;
     int *drop_nums = NULL;
     char **argv = NULL;
     int had_user_fd = (user_fd >= 0);
@@ -166,22 +168,19 @@ py_enter_and_exec(PyObject *self, PyObject *args)
         goto err;
     }
 
-    /* Unpack (fd, nstype) tuples. We take ownership of these fds from the
-     * caller — we must close them all, even on the error path. */
+    /* We take ownership of these fds from the caller — we must close
+     * them all, even on the error path. */
     if (n_other > 0) {
         other_fd = PyMem_Malloc(n_other * sizeof(int));
-        other_nstype = PyMem_Malloc(n_other * sizeof(int));
-        if (!other_fd || !other_nstype) {
+        if (!other_fd) {
             PyErr_NoMemory();
             goto err;
         }
         for (Py_ssize_t i = 0; i < n_other; i++) {
-            PyObject *item = PyList_GET_ITEM(other_fds_list, i);
-            int fd, nstype;
-            if (!PyArg_ParseTuple(item, "ii", &fd, &nstype))
+            int fd = (int)PyLong_AsLong(PyList_GET_ITEM(other_fds_list, i));
+            if (fd == -1 && PyErr_Occurred())
                 goto err;
             other_fd[i] = fd;
-            other_nstype[i] = nstype;
         }
     }
 
@@ -232,7 +231,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
      * child on execve (confirmed empirically against bare nsenter, which
      * only setuid's in the post-fork child). */
     for (Py_ssize_t i = 0; i < n_other; i++) {
-        if (setns(other_fd[i], other_nstype[i]) != 0) {
+        if (setns(other_fd[i], 0) != 0) {
             PyErr_SetFromErrno(PyExc_OSError);
             goto err;
         }
@@ -240,7 +239,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
         other_fd[i] = -1;
     }
     if (user_fd >= 0) {
-        if (setns(user_fd, CLONE_NEWUSER) != 0) {
+        if (setns(user_fd, 0) != 0) {
             PyErr_SetFromErrno(PyExc_OSError);
             goto err;
         }
@@ -305,7 +304,6 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     PyMem_Free(argv);
     PyMem_Free(drop_nums);
     PyMem_Free(other_fd);
-    PyMem_Free(other_nstype);
 
     int status;
     if (waitpid(child, &status, 0) < 0)
@@ -326,7 +324,6 @@ err:
     PyMem_Free(argv);
     PyMem_Free(drop_nums);
     PyMem_Free(other_fd);
-    PyMem_Free(other_nstype);
     return NULL;
 }
 
@@ -359,10 +356,11 @@ static PyMethodDef NsexecMethods[] = {
     {"enter_and_exec",          py_enter_and_exec,          METH_VARARGS,
      "enter_and_exec(user_fd, other_fds, drop_names, caps_text, argv) -> int\n\n"
      "Enter the container's namespaces using caller-supplied fds (see\n"
-     "libvirt_lxc.lxcOpenNamespace), apply cap drops and the explicit\n"
-     "effective+permitted set, fork, and exec `argv` in the container.\n"
-     "Takes ownership of all provided fds. Returns the exit status of the\n"
-     "exec'd process."},
+     "libvirt_lxc.lxcOpenNamespace). other_fds is a list[int]; each fd is\n"
+     "handed to setns(fd, 0) in list order, then user_fd (if >= 0) last.\n"
+     "Cap drops and the explicit effective+permitted set are applied after\n"
+     "the user-ns switch, then fork+exec. Takes ownership of all provided\n"
+     "fds. Returns the exit status of the exec'd process."},
     {NULL, NULL, 0, NULL},
 };
 

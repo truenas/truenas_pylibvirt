@@ -12,62 +12,11 @@ init exits between the PID lookup and the setns sequence.
 
 import os
 import sys
-from types import MappingProxyType
 
 import libvirt
 import libvirt_lxc
 
-from truenas_pylibvirt.nsexec import (
-    CLONE_NEWIPC,
-    CLONE_NEWNET,
-    CLONE_NEWNS,
-    CLONE_NEWPID,
-    CLONE_NEWUSER,
-    CLONE_NEWUTS,
-    enter_and_exec,
-)
-
-
-# Maps the short names that appear in /proc/self/fd/<fd> readlinks
-# ("user:[...]", "mnt:[...]", ...) to the CLONE_NEW* flag required by setns.
-_NS_KIND_TO_FLAG = MappingProxyType(
-    {
-        "user": CLONE_NEWUSER,
-        "mnt": CLONE_NEWNS,
-        "uts": CLONE_NEWUTS,
-        "ipc": CLONE_NEWIPC,
-        "net": CLONE_NEWNET,
-        "pid": CLONE_NEWPID,
-    }
-)
-
-
-def _classify_ns_fds(fds):
-    """Read /proc/self/fd/<fd> symlinks to identify each namespace fd by
-    kind. libvirt's Python binding documents that the returned fds are for
-    setns(2) but doesn't promise a specific ordering across versions;
-    mapping by symlink target is cheap and future-proof.
-
-    Returns ``(user_fd, other_fds)`` where ``user_fd`` is an int (or -1 if
-    no user namespace was returned) and ``other_fds`` is a list of
-    ``(fd, nstype_flag)`` tuples in the order libvirt returned them
-    (user-ns excluded).
-    """
-    user_fd = -1
-    other = []
-    for fd in fds:
-        target = os.readlink(f"/proc/self/fd/{fd}")
-        kind = target.split(":", 1)[0]
-        flag = _NS_KIND_TO_FLAG.get(kind)
-        if flag is None:
-            # Unknown namespace kind — close to avoid leaking and skip.
-            os.close(fd)
-            continue
-        if flag == CLONE_NEWUSER:
-            user_fd = fd
-        else:
-            other.append((fd, flag))
-    return user_fd, other
+from truenas_pylibvirt.nsexec import enter_and_exec
 
 
 def main() -> None:
@@ -82,7 +31,18 @@ def main() -> None:
     dom = conn.lookupByUUIDString(uuid)
     fds = libvirt_lxc.lxcOpenNamespace(dom, 0)
 
-    user_fd, other_fds = _classify_ns_fds(fds)
+    # The only thing we need to know about each fd is whether it's the
+    # user namespace, because the user-ns setns has to happen last (it
+    # resets cap sets; see enter_and_exec). libvirt doesn't document the
+    # order of the returned list, so identify via the ns-kind readlink
+    # on /proc/self/fd/<fd> rather than a positional assumption.
+    user_fd = -1
+    other_fds = []
+    for fd in fds:
+        if os.readlink(f"/proc/self/fd/{fd}").startswith("user:"):
+            user_fd = fd
+        else:
+            other_fds.append(fd)
 
     # If the container has no idmap configured the caller passes
     # with_user=0; in that case skip entering the user namespace so the
