@@ -49,7 +49,9 @@ from ._native import (
     CLONE_NEWUSER,
     CLONE_NEWUTS,
     cap_from_name,
+    cap_max_bits,
     cap_set_proc_from_text,
+    cap_to_name,
     drop_bounding,
     enter_and_exec,
     setns,
@@ -67,7 +69,9 @@ __all__ = [
     "DEFAULT_POLICY_DROPS",
     "build_argv_for_shell",
     "cap_from_name",
+    "cap_max_bits",
     "cap_set_proc_from_text",
+    "cap_to_name",
     "drop_bounding",
     "enter_and_exec",
     "setns",
@@ -80,52 +84,24 @@ __all__ = [
 DEFAULT_POLICY_DROPS = ("sys_module", "sys_time", "mknod", "audit_control", "mac_admin")
 
 
-# Every capability name currently known (matches capabilities(7)).
-ALL_CAPABILITIES = frozenset(
-    [
-        "chown",
-        "dac_override",
-        "dac_read_search",
-        "fowner",
-        "fsetid",
-        "kill",
-        "setgid",
-        "setuid",
-        "setpcap",
-        "linux_immutable",
-        "net_bind_service",
-        "net_broadcast",
-        "net_admin",
-        "net_raw",
-        "ipc_lock",
-        "ipc_owner",
-        "sys_module",
-        "sys_rawio",
-        "sys_chroot",
-        "sys_ptrace",
-        "sys_pacct",
-        "sys_admin",
-        "sys_boot",
-        "sys_nice",
-        "sys_resource",
-        "sys_time",
-        "sys_tty_config",
-        "mknod",
-        "lease",
-        "audit_write",
-        "audit_control",
-        "setfcap",
-        "mac_override",
-        "mac_admin",
-        "syslog",
-        "wake_alarm",
-        "block_suspend",
-        "audit_read",
-        "perfmon",
-        "bpf",
-        "checkpoint_restore",
-    ]
-)
+def _enumerate_capabilities() -> frozenset[str]:
+    """Every capability name the running libcap/kernel recognises.
+
+    ``cap_max_bits()`` returns one past the highest valid cap number
+    (backed by /proc/sys/kernel/cap_last_cap). ``cap_to_name(n)`` returns
+    ``"cap_<name>"`` for recognised caps and a bare decimal string for
+    unknown values; we keep only the named ones, so upgrading libcap or
+    the kernel automatically picks up new caps without source edits.
+    """
+    names = set()
+    for i in range(cap_max_bits()):
+        name = cap_to_name(i)
+        if name.startswith("cap_"):
+            names.add(name[len("cap_"):])
+    return frozenset(names)
+
+
+ALL_CAPABILITIES = _enumerate_capabilities()
 
 
 def _derive_caps(policy: str, capabilities_state: dict):

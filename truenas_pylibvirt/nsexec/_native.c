@@ -69,6 +69,30 @@ py_cap_from_name(PyObject *self, PyObject *args)
 
 
 static PyObject *
+py_cap_to_name(PyObject *self, PyObject *args)
+{
+    int cap;
+    if (!PyArg_ParseTuple(args, "i", &cap))
+        return NULL;
+    char *name = cap_to_name((cap_value_t)cap);
+    if (name == NULL)
+        return PyErr_SetFromErrno(PyExc_OSError);
+    PyObject *result = PyUnicode_FromString(name);
+    cap_free(name);
+    return result;
+}
+
+
+static PyObject *
+py_cap_max_bits(PyObject *self, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return NULL;
+    return PyLong_FromLong((long)cap_max_bits());
+}
+
+
+static PyObject *
 py_cap_set_proc_from_text(PyObject *self, PyObject *args)
 {
     const char *text;
@@ -320,6 +344,14 @@ static PyMethodDef NsexecMethods[] = {
     {"cap_from_name",           py_cap_from_name,           METH_VARARGS,
      "cap_from_name(name: str) -> int\n\n"
      "Resolve a libcap text name (e.g. 'cap_lease') to its numeric value."},
+    {"cap_to_name",             py_cap_to_name,             METH_VARARGS,
+     "cap_to_name(cap: int) -> str\n\n"
+     "Resolve a capability number to its libcap text name (e.g. 0 ->\n"
+     "'cap_chown'). Unknown values come back as a bare decimal string."},
+    {"cap_max_bits",            py_cap_max_bits,            METH_VARARGS,
+     "cap_max_bits() -> int\n\n"
+     "Return one past the highest capability number the running libcap /\n"
+     "kernel recognises (reads /proc/sys/kernel/cap_last_cap)."},
     {"cap_set_proc_from_text",  py_cap_set_proc_from_text,  METH_VARARGS,
      "cap_set_proc_from_text(text: str) -> None\n\n"
      "Parse a libcap text spec (e.g. 'cap_net_admin,cap_net_raw+ep') and\n"
