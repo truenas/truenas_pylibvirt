@@ -38,6 +38,7 @@ user-namespace switch and the rest of the setns calls. The composite
 :func:`enter_and_exec` handles this sequencing in C; the individual
 primitives are exposed for callers that need finer control.
 """
+
 import sys
 
 from ._native import (
@@ -80,23 +81,60 @@ DEFAULT_POLICY_DROPS = ("sys_module", "sys_time", "mknod", "audit_control", "mac
 
 
 # Every capability name currently known (matches capabilities(7)).
-ALL_CAPABILITIES = frozenset([
-    "chown", "dac_override", "dac_read_search", "fowner", "fsetid", "kill",
-    "setgid", "setuid", "setpcap", "linux_immutable", "net_bind_service",
-    "net_broadcast", "net_admin", "net_raw", "ipc_lock", "ipc_owner",
-    "sys_module", "sys_rawio", "sys_chroot", "sys_ptrace", "sys_pacct",
-    "sys_admin", "sys_boot", "sys_nice", "sys_resource", "sys_time",
-    "sys_tty_config", "mknod", "lease", "audit_write", "audit_control",
-    "setfcap", "mac_override", "mac_admin", "syslog", "wake_alarm",
-    "block_suspend", "audit_read", "perfmon", "bpf", "checkpoint_restore",
-])
+ALL_CAPABILITIES = frozenset(
+    [
+        "chown",
+        "dac_override",
+        "dac_read_search",
+        "fowner",
+        "fsetid",
+        "kill",
+        "setgid",
+        "setuid",
+        "setpcap",
+        "linux_immutable",
+        "net_bind_service",
+        "net_broadcast",
+        "net_admin",
+        "net_raw",
+        "ipc_lock",
+        "ipc_owner",
+        "sys_module",
+        "sys_rawio",
+        "sys_chroot",
+        "sys_ptrace",
+        "sys_pacct",
+        "sys_admin",
+        "sys_boot",
+        "sys_nice",
+        "sys_resource",
+        "sys_time",
+        "sys_tty_config",
+        "mknod",
+        "lease",
+        "audit_write",
+        "audit_control",
+        "setfcap",
+        "mac_override",
+        "mac_admin",
+        "syslog",
+        "wake_alarm",
+        "block_suspend",
+        "audit_read",
+        "perfmon",
+        "bpf",
+        "checkpoint_restore",
+    ]
+)
 
 
 def _derive_caps(policy: str, capabilities_state: dict):
     """Return (drop_names, enabled_names) from the raw policy + state."""
     policy = policy.upper()
     if policy == "DEFAULT":
-        drop = [n for n in DEFAULT_POLICY_DROPS if capabilities_state.get(n) is not True]
+        drop = [
+            n for n in DEFAULT_POLICY_DROPS if capabilities_state.get(n) is not True
+        ]
         drop += [n for n, on in capabilities_state.items() if not on]
     elif policy == "ALLOW":
         drop = [n for n, on in capabilities_state.items() if not on]
@@ -109,7 +147,9 @@ def _derive_caps(policy: str, capabilities_state: dict):
     return drop, enabled
 
 
-def build_argv_for_shell(uuid, uri, capabilities_policy, capabilities_state, has_idmap, shell_argv):
+def build_argv_for_shell(
+    uuid, uri, capabilities_policy, capabilities_state, has_idmap, shell_argv
+):
     """Build the argv to hand to execve(2) for opening a shell in a
     running container.
 

@@ -9,6 +9,7 @@ helper :func:`enter_and_exec`. Using libvirt for fd acquisition avoids the
 PID-reuse race that ``open("/proc/<pid>/ns/*")`` has if the container's
 init exits between the PID lookup and the setns sequence.
 """
+
 import os
 import sys
 from types import MappingProxyType
@@ -29,14 +30,16 @@ from truenas_pylibvirt.nsexec import (
 
 # Maps the short names that appear in /proc/self/fd/<fd> readlinks
 # ("user:[...]", "mnt:[...]", ...) to the CLONE_NEW* flag required by setns.
-_NS_KIND_TO_FLAG = MappingProxyType({
-    "user": CLONE_NEWUSER,
-    "mnt": CLONE_NEWNS,
-    "uts": CLONE_NEWUTS,
-    "ipc": CLONE_NEWIPC,
-    "net": CLONE_NEWNET,
-    "pid": CLONE_NEWPID,
-})
+_NS_KIND_TO_FLAG = MappingProxyType(
+    {
+        "user": CLONE_NEWUSER,
+        "mnt": CLONE_NEWNS,
+        "uts": CLONE_NEWUTS,
+        "ipc": CLONE_NEWIPC,
+        "net": CLONE_NEWNET,
+        "pid": CLONE_NEWPID,
+    }
+)
 
 
 def _classify_ns_fds(fds):
