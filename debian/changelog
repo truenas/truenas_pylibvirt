@@ -6,10 +6,11 @@ truenas-pylibvirt (0.1.0-1) unstable; urgency=medium
     `python3 -m truenas_pylibvirt.nsexec`; direct use of the C primitives
     from a persistent multi-threaded daemon is unsafe (see module docstring).
   * Ship a C extension (truenas_pylibvirt.nsexec._native) linked against
-    libcap, exposing setns, drop_bounding, cap_from_name,
-    cap_set_proc_from_text, the CLONE_NEW* constants, and the composite
-    enter_and_exec entry point. enter_and_exec takes caller-supplied
-    namespace fds, switches the non-user namespaces first, then the user
+    libcap, exposing setns, drop_bounding, cap_from_name, cap_to_name,
+    cap_max_bits, cap_set_proc_from_text, the CLONE_NEW* constants, and
+    the composite enter_and_exec entry point. enter_and_exec takes
+    caller-supplied namespace fds (user_fd plus a list[int] of other fds),
+    switches the non-user namespaces first via setns(fd, 0) then the user
     namespace, applies bounding-set drops (prctl(PR_CAPBSET_DROP)), applies
     the explicit effective+permitted capability set (capset(2)), forks so
     the exec'd shell lands in the target's PID namespace, assumes container
@@ -17,8 +18,11 @@ truenas-pylibvirt (0.1.0-1) unstable; urgency=medium
     mounts translate correctly, and relays the child's exit status.
   * Namespace fds are obtained via libvirt (virDomainLxcOpenNamespace,
     exposed in Python as libvirt_lxc.lxcOpenNamespace) instead of opening
-    /proc/<pid>/ns/* directly, removing the PID-reuse race between lookup
-    and setns.
+    /proc/<pid>/ns/<kind> directly, removing the PID-reuse race between
+    lookup and setns.
+  * ALL_CAPABILITIES is enumerated at import time from libcap
+    (cap_max_bits + cap_to_name) rather than hand-maintained, so upgrading
+    libcap/kernel picks up new capability names without source edits.
   * Export DEFAULT_CONTAINERS_URI and DEFAULT_VMS_URI from the top-level
     package; DomainManagers defaults now reference these constants.
   * Package is architecture-specific (was arch: all). Add libcap-dev to
