@@ -39,6 +39,12 @@ name = "truenas_pylibvirt.nsexec._native"
 sources = ["truenas_pylibvirt/nsexec/_native.c"]
 libraries = ["cap"]
 
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
