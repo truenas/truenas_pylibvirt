@@ -55,8 +55,8 @@ set_oserror_with_context(const char *message)
 
 /*
  * Whether `nstype` is a value setns(2) accepts: 0 ("any namespace") or
- * exactly one of the CLONE_NEW* flags supported by the build kernel
- * headers. Matches the enumeration in setns(2).
+ * exactly one of the CLONE_NEW* flags. Matches the enumeration in
+ * setns(2).
  */
 static int
 nstype_is_valid(int nstype)
@@ -70,12 +70,8 @@ nstype_is_valid(int nstype)
     case CLONE_NEWUSER:
     case CLONE_NEWPID:
     case CLONE_NEWNET:
-#ifdef CLONE_NEWCGROUP
     case CLONE_NEWCGROUP:
-#endif
-#ifdef CLONE_NEWTIME
     case CLONE_NEWTIME:
-#endif
         return 1;
     default:
         return 0;
@@ -460,30 +456,17 @@ PyInit__native(void)
 
     /* Expose the CLONE_NEW* flags from <linux/sched.h> (pulled in via
      * <sched.h>) as module attributes so callers can pass them to
-     * enter_and_exec / setns without duplicating the values. CGROUP and
-     * TIME are guarded because older kernel headers may not define
-     * them; the rest are required and present on every Linux we care
-     * about. */
-    if (PyModule_AddIntConstant(m, "CLONE_NEWNS",   CLONE_NEWNS)   < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWUTS",  CLONE_NEWUTS)  < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWIPC",  CLONE_NEWIPC)  < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWUSER", CLONE_NEWUSER) < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWPID",  CLONE_NEWPID)  < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWNET",  CLONE_NEWNET)  < 0) {
+     * enter_and_exec / setns without duplicating the values. */
+    if (PyModule_AddIntConstant(m, "CLONE_NEWNS",     CLONE_NEWNS)     < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWUTS",    CLONE_NEWUTS)    < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWIPC",    CLONE_NEWIPC)    < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWUSER",   CLONE_NEWUSER)   < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWPID",    CLONE_NEWPID)    < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWNET",    CLONE_NEWNET)    < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWCGROUP", CLONE_NEWCGROUP) < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWTIME",   CLONE_NEWTIME)   < 0) {
         Py_DECREF(m);
         return NULL;
     }
-#ifdef CLONE_NEWCGROUP
-    if (PyModule_AddIntConstant(m, "CLONE_NEWCGROUP", CLONE_NEWCGROUP) < 0) {
-        Py_DECREF(m);
-        return NULL;
-    }
-#endif
-#ifdef CLONE_NEWTIME
-    if (PyModule_AddIntConstant(m, "CLONE_NEWTIME", CLONE_NEWTIME) < 0) {
-        Py_DECREF(m);
-        return NULL;
-    }
-#endif
     return m;
 }
