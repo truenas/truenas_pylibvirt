@@ -18,6 +18,7 @@
 #include <Python.h>
 #include <errno.h>
 #include <grp.h>
+#include <limits.h>
 #include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,12 +30,74 @@
 #include <unistd.h>
 
 
+/*
+ * Raise OSError(errno, message) with the *current* errno and a
+ * caller-supplied message identifying which step failed. Used inside
+ * enter_and_exec where bare PyErr_SetFromErrno would lose track of
+ * which of the half-dozen syscalls in the sequence returned the error.
+ */
+static void
+set_oserror_with_context(const char *message)
+{
+    int saved_errno = errno;
+    PyObject *exc = PyObject_CallFunction(
+        PyExc_OSError,
+        "is",
+        saved_errno,
+        message
+    );
+    if (exc == NULL)
+        return;
+    PyErr_SetObject(PyExc_OSError, exc);
+    Py_DECREF(exc);
+}
+
+
+/*
+ * Whether `nstype` is a value setns(2) accepts: 0 ("any namespace") or
+ * exactly one of the CLONE_NEW* flags supported by the build kernel
+ * headers. Matches the enumeration in setns(2).
+ */
+static int
+nstype_is_valid(int nstype)
+{
+    if (nstype == 0)
+        return 1;
+    switch (nstype) {
+    case CLONE_NEWNS:
+    case CLONE_NEWUTS:
+    case CLONE_NEWIPC:
+    case CLONE_NEWUSER:
+    case CLONE_NEWPID:
+    case CLONE_NEWNET:
+#ifdef CLONE_NEWCGROUP
+    case CLONE_NEWCGROUP:
+#endif
+#ifdef CLONE_NEWTIME
+    case CLONE_NEWTIME:
+#endif
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+
 static PyObject *
 py_setns(PyObject *self, PyObject *args)
 {
     int fd, nstype;
     if (!PyArg_ParseTuple(args, "ii", &fd, &nstype))
         return NULL;
+    if (fd < 0) {
+        PyErr_SetString(PyExc_ValueError, "fd must be non-negative");
+        return NULL;
+    }
+    if (!nstype_is_valid(nstype)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "nstype must be 0 or a CLONE_NEW* flag");
+        return NULL;
+    }
     if (setns(fd, nstype) != 0)
         return PyErr_SetFromErrno(PyExc_OSError);
     Py_RETURN_NONE;
@@ -47,6 +110,10 @@ py_drop_bounding(PyObject *self, PyObject *args)
     int cap;
     if (!PyArg_ParseTuple(args, "i", &cap))
         return NULL;
+    if (!cap_valid((cap_value_t)cap)) {
+        PyErr_SetString(PyExc_ValueError, "invalid capability");
+        return NULL;
+    }
     if (prctl(PR_CAPBSET_DROP, cap, 0, 0, 0) != 0)
         return PyErr_SetFromErrno(PyExc_OSError);
     Py_RETURN_NONE;
@@ -169,25 +236,35 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     }
 
     /* We take ownership of these fds from the caller — we must close
-     * them all, even on the error path. */
+     * them all, even on the error path. RawCalloc zero-inits the buffer
+     * but 0 is a valid fd (stdin), so seed every entry with -1 before
+     * parsing so the err: cleanup's `>= 0` check skips unparsed slots. */
     if (n_other > 0) {
-        other_fd = PyMem_Malloc(n_other * sizeof(int));
+        other_fd = PyMem_RawCalloc((size_t)n_other, sizeof(int));
         if (!other_fd) {
             PyErr_NoMemory();
             goto err;
         }
+        for (Py_ssize_t i = 0; i < n_other; i++)
+            other_fd[i] = -1;
         for (Py_ssize_t i = 0; i < n_other; i++) {
-            int fd = (int)PyLong_AsLong(PyList_GET_ITEM(other_fds_list, i));
-            if (fd == -1 && PyErr_Occurred())
+            PyObject *item = PyList_GET_ITEM(other_fds_list, i);
+            long tmp = PyLong_AsLong(item);
+            if (tmp == -1 && PyErr_Occurred())
                 goto err;
-            other_fd[i] = fd;
+            if (tmp < 0 || tmp > INT_MAX) {
+                PyErr_SetString(PyExc_ValueError,
+                                "file descriptor out of range");
+                goto err;
+            }
+            other_fd[i] = (int)tmp;
         }
     }
 
     /* Resolve cap names to numbers before any setns — we still want Python
      * exceptions here to be reportable in the original environment. */
     if (n_drops > 0) {
-        drop_nums = PyMem_Malloc(n_drops * sizeof(int));
+        drop_nums = PyMem_RawCalloc((size_t)n_drops, sizeof(int));
         if (!drop_nums) {
             PyErr_NoMemory();
             goto err;
@@ -207,8 +284,9 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     }
 
     /* Build argv (borrowed pointers — valid until PyUnicode objects are
-     * decref'd, which won't happen before execv). */
-    argv = PyMem_Malloc((n_argv + 1) * sizeof(char *));
+     * decref'd, which won't happen before execv). RawCalloc gives us
+     * NULL-terminated storage by default. */
+    argv = PyMem_RawCalloc((size_t)(n_argv + 1), sizeof(char *));
     if (!argv) {
         PyErr_NoMemory();
         goto err;
@@ -220,7 +298,6 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             goto err;
         argv[i] = (char *)s;
     }
-    argv[n_argv] = NULL;
 
     /* Ordering mirrors nsenter(1):
      *   parent: setns(all non-user) -> setns(user) -> cap adjustments -> fork
@@ -232,7 +309,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
      * only setuid's in the post-fork child). */
     for (Py_ssize_t i = 0; i < n_other; i++) {
         if (setns(other_fd[i], 0) != 0) {
-            PyErr_SetFromErrno(PyExc_OSError);
+            set_oserror_with_context("setns(non-user namespace)");
             goto err;
         }
         close(other_fd[i]);
@@ -240,7 +317,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     }
     if (user_fd >= 0) {
         if (setns(user_fd, 0) != 0) {
-            PyErr_SetFromErrno(PyExc_OSError);
+            set_oserror_with_context("setns(user namespace)");
             goto err;
         }
         close(user_fd);
@@ -252,7 +329,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
      * user-ns switch because setns(CLONE_NEWUSER) resets cap sets. */
     for (Py_ssize_t i = 0; i < n_drops; i++) {
         if (prctl(PR_CAPBSET_DROP, drop_nums[i], 0, 0, 0) != 0) {
-            PyErr_SetFromErrno(PyExc_OSError);
+            set_oserror_with_context("prctl(PR_CAPBSET_DROP)");
             goto err;
         }
     }
@@ -261,7 +338,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     if (caps_text[0] != '\0') {
         cap_t caps = cap_from_text(caps_text);
         if (caps == NULL) {
-            PyErr_SetFromErrno(PyExc_OSError);
+            set_oserror_with_context("cap_from_text");
             goto err;
         }
         int rc = cap_set_proc(caps);
@@ -269,7 +346,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
         cap_free(caps);
         if (rc != 0) {
             errno = saved;
-            PyErr_SetFromErrno(PyExc_OSError);
+            set_oserror_with_context("cap_set_proc");
             goto err;
         }
     }
@@ -279,7 +356,7 @@ py_enter_and_exec(PyObject *self, PyObject *args)
      * setuid/setgid dance that matches nsenter's --user default. */
     pid_t child = fork();
     if (child < 0) {
-        PyErr_SetFromErrno(PyExc_OSError);
+        set_oserror_with_context("fork");
         goto err;
     }
     if (child == 0) {
@@ -301,9 +378,9 @@ py_enter_and_exec(PyObject *self, PyObject *args)
         _exit(127);
     }
 
-    PyMem_Free(argv);
-    PyMem_Free(drop_nums);
-    PyMem_Free(other_fd);
+    PyMem_RawFree(argv);
+    PyMem_RawFree(drop_nums);
+    PyMem_RawFree(other_fd);
 
     int status;
     if (waitpid(child, &status, 0) < 0)
@@ -321,9 +398,9 @@ err:
             if (other_fd[i] >= 0) close(other_fd[i]);
         }
     }
-    PyMem_Free(argv);
-    PyMem_Free(drop_nums);
-    PyMem_Free(other_fd);
+    PyMem_RawFree(argv);
+    PyMem_RawFree(drop_nums);
+    PyMem_RawFree(other_fd);
     return NULL;
 }
 
@@ -383,15 +460,30 @@ PyInit__native(void)
 
     /* Expose the CLONE_NEW* flags from <linux/sched.h> (pulled in via
      * <sched.h>) as module attributes so callers can pass them to
-     * enter_and_exec / setns without duplicating the values. */
-    if (PyModule_AddIntConstant(m, "CLONE_NEWNS", CLONE_NEWNS) < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWUTS", CLONE_NEWUTS) < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWIPC", CLONE_NEWIPC) < 0 ||
+     * enter_and_exec / setns without duplicating the values. CGROUP and
+     * TIME are guarded because older kernel headers may not define
+     * them; the rest are required and present on every Linux we care
+     * about. */
+    if (PyModule_AddIntConstant(m, "CLONE_NEWNS",   CLONE_NEWNS)   < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWUTS",  CLONE_NEWUTS)  < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWIPC",  CLONE_NEWIPC)  < 0 ||
         PyModule_AddIntConstant(m, "CLONE_NEWUSER", CLONE_NEWUSER) < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWPID", CLONE_NEWPID) < 0 ||
-        PyModule_AddIntConstant(m, "CLONE_NEWNET", CLONE_NEWNET) < 0) {
+        PyModule_AddIntConstant(m, "CLONE_NEWPID",  CLONE_NEWPID)  < 0 ||
+        PyModule_AddIntConstant(m, "CLONE_NEWNET",  CLONE_NEWNET)  < 0) {
         Py_DECREF(m);
         return NULL;
     }
+#ifdef CLONE_NEWCGROUP
+    if (PyModule_AddIntConstant(m, "CLONE_NEWCGROUP", CLONE_NEWCGROUP) < 0) {
+        Py_DECREF(m);
+        return NULL;
+    }
+#endif
+#ifdef CLONE_NEWTIME
+    if (PyModule_AddIntConstant(m, "CLONE_NEWTIME", CLONE_NEWTIME) < 0) {
+        Py_DECREF(m);
+        return NULL;
+    }
+#endif
     return m;
 }
