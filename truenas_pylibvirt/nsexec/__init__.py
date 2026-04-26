@@ -119,7 +119,7 @@ _POLICY_BASELINES = MappingProxyType(
 )
 
 
-def _derive_caps(policy: str, capabilities_state: dict) -> tuple[list[str], list[str]]:
+def _derive_caps(policy: str, capabilities_state: dict[str, bool]) -> tuple[list[str], list[str]]:
     """Return (drop_names, enabled_names) from the raw policy + state."""
     try:
         baseline = _POLICY_BASELINES[policy.upper()]
@@ -135,8 +135,13 @@ def _derive_caps(policy: str, capabilities_state: dict) -> tuple[list[str], list
 
 
 def build_argv_for_shell(
-    uuid, uri, capabilities_policy, capabilities_state, has_idmap, shell_argv
-):
+    uuid: str,
+    uri: str,
+    capabilities_policy: str,
+    capabilities_state: dict[str, bool],
+    has_idmap: bool,
+    shell_argv: list[str],
+) -> list[str]:
     """Build the argv to hand to execve(2) for opening a shell in a
     running container.
 

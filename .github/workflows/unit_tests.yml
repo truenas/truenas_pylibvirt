@@ -21,7 +21,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libvirt-dev pkg-config
+        sudo apt-get install -y libvirt-dev libcap-dev pkg-config
 
     - name: Clone and install truenas_pynetif
       run: |

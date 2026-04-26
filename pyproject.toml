@@ -50,5 +50,5 @@ addopts = "-v --tb=short"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["libvirt.*", "pyudev.*"]
+module = ["libvirt.*", "libvirt_lxc.*", "pyudev.*", "truenas_pylibvirt.nsexec._native"]
 ignore_missing_imports = true
