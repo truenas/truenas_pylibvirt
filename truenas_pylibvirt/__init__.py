@@ -7,7 +7,7 @@ from .domain.container.configuration import (  # noqa
     ContainerIdmapConfigurationItem,
 )
 from .domain.container.domain import ContainerDomain  # noqa
-from .domain.managers import DomainManagers  # noqa
+from .domain.managers import DEFAULT_CONTAINERS_URI, DEFAULT_VMS_URI, DomainManagers  # noqa
 from .domain.vm.configuration import (  # noqa
     VmBootloader, VmCpuMode, VmDomainConfiguration,
 )
@@ -26,6 +26,8 @@ __all__ = [
     'Connection',
     'ConnectionManager',
     'BaseDomain',
+    'DEFAULT_CONTAINERS_URI',
+    'DEFAULT_VMS_URI',
     'DiskStorageDevice',
     'DomainDoesNotExistError',
     'DomainManagers',
