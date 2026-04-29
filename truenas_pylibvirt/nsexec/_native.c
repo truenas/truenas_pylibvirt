@@ -54,6 +54,38 @@ set_oserror_with_context(const char *message)
 
 
 /*
+ * Fork via Python's os.fork() rather than calling fork(2) directly.
+ * os.fork wraps fork(2) with PyOS_BeforeFork / PyOS_AfterFork_{Parent,Child}
+ * (so Python runtime state — import lock, GIL bookkeeping — settles
+ * correctly across the fork) plus a subinterpreter guard. Returns 0 in
+ * the child, the child PID in the parent, or -1 with a Python exception
+ * set on failure.
+ */
+static pid_t
+python_fork(void)
+{
+    PyObject *os_module = PyImport_ImportModule("os");
+    if (os_module == NULL)
+        return -1;
+    PyObject *fork_name = PyUnicode_InternFromString("fork");
+    if (fork_name == NULL) {
+        Py_DECREF(os_module);
+        return -1;
+    }
+    PyObject *pid_obj = PyObject_CallMethodNoArgs(os_module, fork_name);
+    Py_DECREF(fork_name);
+    Py_DECREF(os_module);
+    if (pid_obj == NULL)
+        return -1;
+    long pid = PyLong_AsLong(pid_obj);
+    Py_DECREF(pid_obj);
+    if (pid == -1 && PyErr_Occurred())
+        return -1;
+    return (pid_t)pid;
+}
+
+
+/*
  * Whether `nstype` is a value setns(2) accepts: 0 ("any namespace") or
  * exactly one of the CLONE_NEW* flags. Matches the enumeration in
  * setns(2).
@@ -349,25 +381,34 @@ py_enter_and_exec(PyObject *self, PyObject *args)
 
     /* setns(CLONE_NEWPID) only affects children — fork so the exec'd shell
      * lands in the container's PID namespace. The child also handles the
-     * setuid/setgid dance that matches nsenter's --user default. */
-    pid_t child = fork();
-    if (child < 0) {
-        set_oserror_with_context("fork");
+     * setuid/setgid dance that matches nsenter's --user default.
+     *
+     * Going through os.fork (see python_fork) gets us PyOS_BeforeFork /
+     * PyOS_AfterFork_{Parent,Child} and the subinterpreter guard for free,
+     * and any fork failure surfaces as the same OSError CPython would
+     * otherwise raise. */
+    pid_t child = python_fork();
+    if (child < 0)
         goto err;
-    }
     if (child == 0) {
         /* Mirror bare nsenter(1) behaviour for --user: drop supplementary
-         * groups, then setgid(0) + setuid(0) so our kuid is re-anchored
-         * through the container's user-namespace mapping. Doing this in the
-         * child (not the parent) is what nsenter does; doing it in the
-         * parent did not correctly propagate the in-namespace uid to the
-         * exec'd shell. Only do this when the caller indicated a user-ns
-         * entry — without one, we'd be running as host root and any such
-         * call is redundant. */
+         * groups, then re-anchor real/effective/saved gid+uid to 0 (in-ns
+         * root) so writes to idmapped mounts translate correctly. Doing
+         * this in the child (not the parent) is what nsenter does; doing
+         * it in the parent did not correctly propagate the in-namespace
+         * uid to the exec'd shell.
+         *
+         * setresgid/setresuid (vs setgid/setuid) explicitly sets all three
+         * IDs in one call. setuid(0) only sets all three when euid is
+         * already 0 — the explicit form removes that conditional and
+         * leaves nothing to assumption about what the saved-set-uid ends
+         * up as. Only run this when the caller indicated a user-ns entry —
+         * without one, we'd be running as host root and any such call is
+         * redundant. */
         if (had_user_fd) {
             (void)setgroups(0, NULL);
-            if (setgid(0) != 0) _exit(126);
-            if (setuid(0) != 0) _exit(126);
+            if (setresgid(0, 0, 0) != 0) _exit(126);
+            if (setresuid(0, 0, 0) != 0) _exit(126);
         }
         execv(argv[0], argv);
         /* execv only returns on failure. */
