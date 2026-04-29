@@ -29,6 +29,26 @@ def main() -> None:
 
     conn = libvirt.open(uri)
     dom = conn.lookupByUUIDString(uuid)
+
+    # Move ourselves into the container's cgroup BEFORE fork so the exec'd
+    # shell inherits it. Without this the entered shell runs in the
+    # launching process's host cgroup and escapes every memory / CPU /
+    # pids / IO limit configured on the container — a fork-bomb in the
+    # shell becomes a host fork-bomb. Cgroup membership is process-level
+    # state and propagates across fork+exec, so doing it here is enough.
+    # Cgroup v2 (unified hierarchy) only — TrueNAS uses v2.
+    init_pid = dom.ID()
+    cg_path = None
+    with open(f"/proc/{init_pid}/cgroup") as cgf:
+        for line in cgf:
+            if line.startswith("0::"):
+                cg_path = line.partition("0::")[2].strip()
+                break
+    if cg_path is None:
+        raise RuntimeError(f"no unified cgroup found for pid {init_pid}")
+    with open(f"/sys/fs/cgroup{cg_path}/cgroup.procs", "w") as procs:
+        procs.write("0\n")
+
     fds = libvirt_lxc.lxcOpenNamespace(dom, 0)
 
     # The only thing we need to know about each fd is whether it's the

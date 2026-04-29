@@ -410,6 +410,16 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             if (setresgid(0, 0, 0) != 0) _exit(126);
             if (setresuid(0, 0, 0) != 0) _exit(126);
         }
+
+        /* PR_SET_NO_NEW_PRIVS: setuid / file-cap binaries inside the
+         * container's rootfs cannot grant privileges across the upcoming
+         * execve. Without this, a setuid-root binary in the rootfs would
+         * execute with full host root caps, bypassing the bounding-set
+         * drops and explicit cap set we applied above. The bit is
+         * inherited across execve and cannot be cleared, so applying it
+         * here in the child (right before exec) is sufficient. */
+        if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) _exit(125);
+
         execv(argv[0], argv);
         /* execv only returns on failure. */
         _exit(127);
