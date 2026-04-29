@@ -1,32 +1,28 @@
 truenas-pylibvirt (0.1.0-1) unstable; urgency=medium
 
-  * Add nsexec subpackage for entering a running libvirt-LXC container as
-    a child process with the container's configured capability restrictions
-    applied to the final exec. Sanctioned entry point is
-    `python3 -m truenas_pylibvirt.nsexec`; direct use of the C primitives
-    from a persistent multi-threaded daemon is unsafe (see module docstring).
+  * Add nsexec subpackage for entering a running libvirt-LXC container.
+    Entry point is `python3 -m truenas_pylibvirt.nsexec`; direct use of
+    the C primitives from a multi-threaded daemon is unsafe.
   * Ship a C extension (truenas_pylibvirt.nsexec._native) linked against
-    libcap, exposing setns, drop_bounding, cap_from_name, cap_to_name,
-    cap_max_bits, cap_set_proc_from_text, the CLONE_NEW* constants, and
-    the composite enter_and_exec entry point. enter_and_exec takes
-    caller-supplied namespace fds (user_fd plus a list[int] of other fds),
-    switches the non-user namespaces first via setns(fd, 0) then the user
-    namespace, applies bounding-set drops (prctl(PR_CAPBSET_DROP)), applies
-    the explicit effective+permitted capability set (capset(2)), forks so
-    the exec'd shell lands in the target's PID namespace, assumes container
-    root in the child (setgroups/setgid/setuid) so writes to idmapped
-    mounts translate correctly, and relays the child's exit status.
-  * Namespace fds are obtained via libvirt (virDomainLxcOpenNamespace,
-    exposed in Python as libvirt_lxc.lxcOpenNamespace) instead of opening
-    /proc/<pid>/ns/<kind> directly, removing the PID-reuse race between
-    lookup and setns.
-  * ALL_CAPABILITIES is enumerated at import time from libcap
-    (cap_max_bits + cap_to_name) rather than hand-maintained, so upgrading
-    libcap/kernel picks up new capability names without source edits.
-  * Export DEFAULT_CONTAINERS_URI and DEFAULT_VMS_URI from the top-level
-    package; DomainManagers defaults now reference these constants.
-  * Package is architecture-specific (was arch: all). Add libcap-dev to
-    Build-Depends.
+    libcap. enter_and_exec switches non-user namespaces, then the user
+    namespace, applies bounding-set drops and an explicit
+    effective+permitted set, then forks via os.fork(). In the child:
+    setresgid/setresuid(0,0,0) re-anchors to in-ns root and
+    PR_SET_NO_NEW_PRIVS blocks setuid escalation through the rootfs
+    before execv.
+  * The launcher migrates itself into the container's unified-hierarchy
+    cgroup before fork, so the exec'd shell inherits the container's
+    pids/memory/CPU/IO limits and a fork-bomb cannot escape to the host.
+  * Namespace fds come from virDomainLxcOpenNamespace (exposed as
+    libvirt_lxc.lxcOpenNamespace), avoiding the PID-reuse race against
+    opening /proc/<pid>/ns/* directly.
+  * ALL_CAPABILITIES is enumerated at import time from libcap, so
+    kernel/libcap upgrades pick up new capability names without source
+    edits.
+  * Export DEFAULT_CONTAINERS_URI and DEFAULT_VMS_URI; DomainManagers
+    defaults now reference these constants.
+  * Package is architecture-specific (was arch: all); libcap-dev added
+    to Build-Depends.
 
  -- TrueNAS Engineering <dev@truenas.com>  Fri, 24 Apr 2026 10:00:00 -0500
 
