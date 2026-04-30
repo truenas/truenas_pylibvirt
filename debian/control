@@ -5,6 +5,7 @@ Maintainer: TrueNAS Engineering <dev@truenas.com>
 Build-Depends: debhelper-compat (= 12),
                dh-python,
                dpkg-dev,
+               libcap-dev,
                pybuild-plugin-pyproject,
                python3-all-dev,
                python3-setuptools,

@@ -7,7 +7,7 @@ from .domain.container.configuration import (  # noqa
     ContainerIdmapConfigurationItem,
 )
 from .domain.container.domain import ContainerDomain  # noqa
-from .domain.managers import DomainManagers  # noqa
+from .domain.managers import DEFAULT_CONTAINERS_URI, DEFAULT_VMS_URI, DomainManagers  # noqa
 from .domain.vm.configuration import (  # noqa
     VmBootloader, VmCpuMode, VmDomainConfiguration,
 )
@@ -16,3 +16,31 @@ from .error import Error, DomainDoesNotExistError  # noqa
 from .libvirtd.connection import Connection  # noqa
 from .libvirtd.connection_manager import ConnectionManager  # noqa
 from .libvirtd.service_delegate import ServiceDelegate  # noqa
+
+__all__ = [
+    'ContainerCapabilitiesPolicy',
+    'ContainerDomain',
+    'ContainerDomainConfiguration',
+    'ContainerIdmapConfiguration',
+    'ContainerIdmapConfigurationItem',
+    'Connection',
+    'ConnectionManager',
+    'BaseDomain',
+    'DEFAULT_CONTAINERS_URI',
+    'DEFAULT_VMS_URI',
+    'DiskStorageDevice',
+    'DomainDoesNotExistError',
+    'DomainManagers',
+    'Error',
+    'NICDevice',
+    'NICDeviceModel',
+    'NICDeviceType',
+    'ServiceDelegate',
+    'StorageDeviceIoType',
+    'StorageDeviceType',
+    'Time',
+    'VmBootloader',
+    'VmCpuMode',
+    'VmDomain',
+    'VmDomainConfiguration',
+]
