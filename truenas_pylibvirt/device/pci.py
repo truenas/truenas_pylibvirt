@@ -61,7 +61,9 @@ class PCIDevice(Device):
 
     def is_available_impl(self) -> bool:
         pci_device = self.get_pci_device_details()
-        return pci_device['available'] if pci_device else False
+        if not pci_device:
+            return False
+        return not pci_device['critical'] and not pci_device['error']
 
     def get_pci_device_details(self) -> dict[str, Any] | None:
         pci_device = get_single_pci_device_details(self.pci_device)
