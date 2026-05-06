@@ -1,7 +1,7 @@
 """Tests for PCI device validation and conflict detection."""
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from xml.etree import ElementTree as ET
 
 from truenas_pylibvirt.device import PCIDevice
@@ -196,3 +196,87 @@ def test_pci_no_conflict_with_inactive_vm(mock_device_delegate):
 
     errors = device.validate_start(context)
     assert len(errors) == 0  # Inactive VM doesn't cause conflict
+
+
+def _make_pci_device(mock_device_delegate):
+    return PCIDevice(
+        domain="0000",
+        bus="01",
+        slot="00",
+        function="0",
+        pci_device="pci_0000_01_00_0",
+        device_delegate=mock_device_delegate,
+    )
+
+
+def test_pci_is_available_when_device_not_found(mock_device_delegate):
+    """PCI device that udev does not return -> is_available is False."""
+    device = _make_pci_device(mock_device_delegate)
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=None):
+        assert device.is_available() is False
+
+
+def test_pci_is_available_when_bound_to_host_driver(mock_device_delegate):
+    """Regression-locking test: device bound to its host driver (not vfio-pci)
+    must still be considered available; the rebind happens in PCIDevice.run()."""
+    device = _make_pci_device(mock_device_delegate)
+    details = {
+        'critical': False,
+        'error': None,
+        'available': False,
+        'drivers': ['nvidia'],
+    }
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=details):
+        assert device.is_available() is True
+
+
+def test_pci_is_available_when_bound_to_vfio_pci(mock_device_delegate):
+    """Post-detach state: device already bound to vfio-pci is available."""
+    device = _make_pci_device(mock_device_delegate)
+    details = {
+        'critical': False,
+        'error': None,
+        'available': True,
+        'drivers': ['vfio-pci'],
+    }
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=details):
+        assert device.is_available() is True
+
+
+def test_pci_is_available_false_when_critical(mock_device_delegate):
+    """Critical devices (boot HBA, mgmt NIC, etc.) must never be available."""
+    device = _make_pci_device(mock_device_delegate)
+    details = {
+        'critical': True,
+        'error': None,
+        'available': False,
+        'drivers': ['ahci'],
+    }
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=details):
+        assert device.is_available() is False
+
+
+def test_pci_is_available_false_when_error_present(mock_device_delegate):
+    """A device whose IOMMU group cannot be determined is not available."""
+    device = _make_pci_device(mock_device_delegate)
+    details = {
+        'critical': False,
+        'error': 'Unable to determine iommu group',
+        'available': False,
+        'drivers': [],
+    }
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=details):
+        assert device.is_available() is False
+
+
+def test_pci_is_available_false_when_critical_and_error(mock_device_delegate):
+    """Both flags set: still not available (covers AND-of-negations)."""
+    device = _make_pci_device(mock_device_delegate)
+    details = {
+        'critical': True,
+        'error': 'Unable to determine iommu group',
+        'available': False,
+        'drivers': [],
+    }
+    with patch.object(PCIDevice, 'get_pci_device_details', return_value=details):
+        assert device.is_available() is False
