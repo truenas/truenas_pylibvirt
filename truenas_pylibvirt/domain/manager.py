@@ -15,7 +15,7 @@ from .start_validator import StartValidator, StartValidationContext
 logger = logging.getLogger(__name__)
 
 STOPPED_STATES = [DomainState.SHUTDOWN, DomainState.SHUTOFF, DomainState.CRASHED]
-STOPPED_EVENTS = [VirDomainEvent.STOPPED, VirDomainEvent.SHUTDOWN, VirDomainEvent.UNDEFINED]
+STOPPED_EVENTS = [VirDomainEvent.STOPPED, VirDomainEvent.UNDEFINED]
 
 
 class StartedDomain:
