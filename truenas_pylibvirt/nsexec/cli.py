@@ -480,6 +480,9 @@ def get_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = get_parser().parse_args(argv)
 
+    if os.geteuid() != 0:
+        _die("must be run as root", code=1)
+
     if args.force_interactive and args.force_non_interactive:
         _die("-t and -T are mutually exclusive")
     if args.mode != "auto" and (args.force_interactive or args.force_non_interactive):
