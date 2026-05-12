@@ -29,13 +29,24 @@ class ContainerDomain(BaseDomain):
             idmapped_root = f"/run/truenas_containers/root/{self.configuration.uuid}"
             os.makedirs(idmapped_root, exist_ok=True)
 
+            idmap_spec = " ".join(
+                [
+                    self._x_mount_idmap("u", idmap.uid),
+                    self._x_mount_idmap("g", idmap.gid),
+                ]
+            )
             try:
-                subprocess.run([
-                    "mount",
-                    "-o", f"bind,X-mount.idmap=u:{self._x_mount_idmap(idmap.uid)} g:{self._x_mount_idmap(idmap.gid)}",
-                    self.configuration.root,
-                    idmapped_root,
-                ], capture_output=True, check=True)
+                subprocess.run(
+                    [
+                        "mount",
+                        "-o",
+                        f"bind,X-mount.idmap={idmap_spec}",
+                        self.configuration.root,
+                        idmapped_root,
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
                 root = idmapped_root
                 # subprocess.run(["mount", "--make-rshared", idmapped_root], capture_output=True, check=True)
             except subprocess.CalledProcessError as e:
@@ -60,18 +71,18 @@ class ContainerDomain(BaseDomain):
         pid_path = f"/var/run/libvirt/lxc/{self.configuration.uuid}.pid"
         with contextlib.suppress(FileNotFoundError):
             # Do not make a stat call to check if file exists or not
-            with open(pid_path, 'r') as f:
+            with open(pid_path, "r") as f:
                 pid = int(f.read())
 
-            with open(f'/proc/{pid}/task/{pid}/children') as f:
+            with open(f"/proc/{pid}/task/{pid}/children") as f:
                 return int(f.read().split()[0])
         return None
 
     def undefine(self, libvirt_domain: Any) -> None:
         libvirt_domain.undefine()
 
-    def _x_mount_idmap(self, item: ContainerIdmapConfigurationItem) -> str:
-        return f"0:{item.target}:{item.count}"
+    def _x_mount_idmap(self, prefix: str, items: list[ContainerIdmapConfigurationItem]) -> str:
+        return " ".join(f"{prefix}:{item.start}:{item.target}:{item.count}" for item in items)
 
 
 @dataclass
