@@ -73,6 +73,7 @@ __all__ = [
     "cap_max_bits",
     "cap_set_proc_from_text",
     "cap_to_name",
+    "derive_caps",
     "drop_bounding",
     "enter_and_exec",
     "setns",
@@ -119,7 +120,7 @@ _POLICY_BASELINES = MappingProxyType(
 )
 
 
-def _derive_caps(policy: str, capabilities_state: dict[str, bool]) -> tuple[list[str], list[str]]:
+def derive_caps(policy: str, capabilities_state: dict[str, bool]) -> tuple[list[str], list[str]]:
     """Return (drop_names, enabled_names) from the raw policy + state."""
     try:
         baseline = _POLICY_BASELINES[policy.upper()]
@@ -159,7 +160,7 @@ def build_argv_for_shell(
     :param shell_argv: argv of the shell to launch inside the container
                        (e.g. ["/bin/sh", "-c", cmd])
     """
-    drop_names, enabled = _derive_caps(capabilities_policy, capabilities_state)
+    drop_names, enabled = derive_caps(capabilities_policy, capabilities_state)
     drop_csv = ",".join(f"cap_{n}" for n in drop_names)
     caps_text = f"{','.join(f'cap_{n}' for n in enabled)}+ep" if enabled else ""
     return [
