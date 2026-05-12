@@ -413,36 +413,24 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             if (setresuid(0, 0, 0) != 0) _exit(126);
         }
 
-        /* Claim the slave PTY as our session's controlling terminal,
-         * but only when no session already owns it. This handles the
-         * truenas-nsexec cli.py interactive path, which does openpty
-         * + setsid + dup2 in a host-side child but leaves TIOCSCTTY
-         * to the grandchild here so the foreground pgid recorded on
-         * the slave is a pid_t visible from inside the container's
-         * PID namespace.
+        /* Claim the slave as ctty here in the in-container PID ns
+         * (rather than caller-side) so the recorded foreground pgid
+         * is a pid_t visible inside the container. Only when no
+         * session already owns the slave:
          *
-         * When tcgetsid(0) == getsid(0), the caller already arranged
-         * the slave as our session's ctty (e.g. forkpty(3) /
-         * login_tty(3) in the webshell middleware, or any interactive
-         * pipeline whose pgrp is foreground on the user's terminal).
-         * Do nothing in that case: setsid here would detach into a
-         * ctty-less session and the follow-up TIOCSCTTY would fail
-         * with EPERM (the slave is still owned by the parent
-         * session), leaving the shell unable to open /dev/tty
-         * ("can't access tty; job control turned off"). Trying to
-         * re-anchor the foreground pgid via setpgid+tcsetpgrp is
-         * also unsafe: tcsetpgrp from the new (background) pgrp
-         * triggers SIGTTOU and stops us, hanging the parent's
-         * waitpid; even with SIGTTOU ignored, we'd steal the
-         * foreground from any pipeline siblings (`... | grep`),
-         * which then SIGTTOU-stop on their next terminal write. The
-         * residual cosmetic cost of doing nothing is that an
-         * interactive shell may emit "Cannot set tty process group"
-         * on exit if it saved a host-PID-NS foreground pgid at
-         * startup — strictly less bad than the alternatives.
+         *  - tcgetsid(0) != getsid(0): nobody's ctty (cli.py
+         *    interactive: openpty + caller setsid + dup2). setsid +
+         *    TIOCSCTTY claims it.
          *
-         * Guarded on isatty(0) so non-interactive callers (pipe on
-         * stdin) don't get a spurious new session either. */
+         *  - tcgetsid(0) == getsid(0): caller's session already owns
+         *    the slave (forkpty(3) in truenas/middleware's webshell;
+         *    bash's tty when run from a pipeline). Don't touch:
+         *    setsid would detach into a ctty-less session +
+         *    TIOCSCTTY EPERM; setpgid + tcsetpgrp instead would
+         *    SIGTTOU-stop us (parent's waitpid hangs) or, if
+         *    SIGTTOU-ignored, steal foreground from pipeline
+         *    siblings. Acceptable cost: an interactive shell may
+         *    print "Cannot set tty process group" on exit. */
         if (isatty(0) && tcgetsid(0) != getsid(0)) {
             (void)setsid();
             (void)ioctl(0, TIOCSCTTY, NULL);
