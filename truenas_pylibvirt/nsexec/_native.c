@@ -413,44 +413,39 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             if (setresuid(0, 0, 0) != 0) _exit(126);
         }
 
-        /* Pin the slave PTY's foreground pgid to this post-fork child
-         * so the kernel records a pid_t visible inside the container's
-         * PID namespace. If the foreground pgid were set from the host
-         * PID ns (e.g. by a caller-side setsid + TIOCSCTTY), an
-         * interactive shell calling tcgetpgrp(0) at startup would see 0
-         * (host pid not visible in the container ns), save it, and
-         * later fail tcsetpgrp(0, 0) with ESRCH on exit ("Cannot set
-         * tty process group").
+        /* Claim the slave PTY as our session's controlling terminal,
+         * but only when no session already owns it. This handles the
+         * truenas-nsexec cli.py interactive path, which does openpty
+         * + setsid + dup2 in a host-side child but leaves TIOCSCTTY
+         * to the grandchild here so the foreground pgid recorded on
+         * the slave is a pid_t visible from inside the container's
+         * PID namespace.
          *
-         * Two cases:
+         * When tcgetsid(0) == getsid(0), the caller already arranged
+         * the slave as our session's ctty (e.g. forkpty(3) /
+         * login_tty(3) in the webshell middleware, or any interactive
+         * pipeline whose pgrp is foreground on the user's terminal).
+         * Do nothing in that case: setsid here would detach into a
+         * ctty-less session and the follow-up TIOCSCTTY would fail
+         * with EPERM (the slave is still owned by the parent
+         * session), leaving the shell unable to open /dev/tty
+         * ("can't access tty; job control turned off"). Trying to
+         * re-anchor the foreground pgid via setpgid+tcsetpgrp is
+         * also unsafe: tcsetpgrp from the new (background) pgrp
+         * triggers SIGTTOU and stops us, hanging the parent's
+         * waitpid; even with SIGTTOU ignored, we'd steal the
+         * foreground from any pipeline siblings (`... | grep`),
+         * which then SIGTTOU-stop on their next terminal write. The
+         * residual cosmetic cost of doing nothing is that an
+         * interactive shell may emit "Cannot set tty process group"
+         * on exit if it saved a host-PID-NS foreground pgid at
+         * startup — strictly less bad than the alternatives.
          *
-         *   tty_sid == my_sid — the caller has already set up the slave
-         *     as our session's ctty (forkpty(3) / login_tty(3) do this,
-         *     and the webshell middleware uses forkpty). Calling setsid
-         *     here would detach into a new ctty-less session and the
-         *     follow-up TIOCSCTTY would fail with EPERM (the slave is
-         *     still owned by the parent session), leaving the shell
-         *     unable to open /dev/tty — "can't access tty; job control
-         *     turned off". Just install ourselves as the foreground
-         *     pgrp in the existing session.
-         *
-         *   otherwise — no session owns the slave as ctty (typical for
-         *     openpty(3) followed by setsid+dup2 in the caller, as in
-         *     truenas-nsexec's cli.py), or another session does and we
-         *     want our own. Take a fresh session and claim the slave.
-         *
-         * Guarded on isatty(0) so non-interactive callers don't get a
-         * spurious new session. */
-        if (isatty(0)) {
-            pid_t my_sid = getsid(0);
-            pid_t tty_sid = tcgetsid(0);
-            if (tty_sid == my_sid) {
-                (void)setpgid(0, 0);
-                (void)tcsetpgrp(0, getpid());
-            } else {
-                (void)setsid();
-                (void)ioctl(0, TIOCSCTTY, NULL);
-            }
+         * Guarded on isatty(0) so non-interactive callers (pipe on
+         * stdin) don't get a spurious new session either. */
+        if (isatty(0) && tcgetsid(0) != getsid(0)) {
+            (void)setsid();
+            (void)ioctl(0, TIOCSCTTY, NULL);
         }
 
         /* PR_SET_NO_NEW_PRIVS: setuid / file-cap binaries inside the
