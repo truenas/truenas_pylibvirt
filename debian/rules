@@ -10,5 +10,28 @@ export PYBUILD_NAME=truenas-pylibvirt
 override_dh_auto_configure:
 	dh_auto_configure
 
+override_dh_auto_build:
+	dh_auto_build
+	# Load cli.py directly via --pyfile rather than --module: importing
+	# truenas_pylibvirt.nsexec.cli triggers the subpackage's __init__.py,
+	# which loads the _native C extension that isn't on PYTHONPATH at this
+	# point in the build (pybuild stages it under .pybuild/, not in-tree).
+	# --pyfile uses runpy and skips the package machinery.
+	argparse-manpage \
+		--pyfile=truenas_pylibvirt/nsexec/cli.py \
+		--function=get_parser \
+		--prog=truenas-nsexec \
+		--project-name=truenas-pylibvirt \
+		--author="TrueNAS Engineering" \
+		--author-email=dev@truenas.com \
+		--url=https://github.com/truenas/truenas_pylibvirt \
+		--description="run a command inside a running libvirt container" \
+		--manual-title="TrueNAS Container Tools" \
+		--output=debian/truenas-nsexec.1
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f debian/truenas-nsexec.1
+
 override_dh_install:
 	dh_install
