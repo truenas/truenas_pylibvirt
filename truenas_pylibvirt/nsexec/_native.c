@@ -28,6 +28,7 @@
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 
@@ -412,28 +413,44 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             if (setresuid(0, 0, 0) != 0) _exit(126);
         }
 
-        /* Take ownership of the controlling terminal here, in the
-         * post-fork child, rather than in the calling process before
-         * fork. This child is the first process executed inside the
-         * container's PID namespace; making it the session leader and
-         * the slave PTY's controlling-terminal owner means the
-         * foreground pgid the kernel records on the tty is a pid_t
-         * valid within the container's namespace. If setsid + TIOCSCTTY
-         * ran in the calling process (host PID ns), that pgid would be
-         * a host pid not visible from inside the container: an
-         * interactive shell calling tcgetpgrp(0) at startup would see
-         * 0, save it, and later fail tcsetpgrp(0, 0) with ESRCH on
-         * exit ("Cannot set tty process group").
+        /* Pin the slave PTY's foreground pgid to this post-fork child
+         * so the kernel records a pid_t visible inside the container's
+         * PID namespace. If the foreground pgid were set from the host
+         * PID ns (e.g. by a caller-side setsid + TIOCSCTTY), an
+         * interactive shell calling tcgetpgrp(0) at startup would see 0
+         * (host pid not visible in the container ns), save it, and
+         * later fail tcsetpgrp(0, 0) with ESRCH on exit ("Cannot set
+         * tty process group").
          *
-         * Best-effort: setsid is a no-op if we are somehow already a
-         * session leader, and TIOCSCTTY returns EPERM if the slave is
-         * already controlling terminal of another session — both
-         * harmless when the caller has already arranged its own ctty.
+         * Two cases:
+         *
+         *   tty_sid == my_sid — the caller has already set up the slave
+         *     as our session's ctty (forkpty(3) / login_tty(3) do this,
+         *     and the webshell middleware uses forkpty). Calling setsid
+         *     here would detach into a new ctty-less session and the
+         *     follow-up TIOCSCTTY would fail with EPERM (the slave is
+         *     still owned by the parent session), leaving the shell
+         *     unable to open /dev/tty — "can't access tty; job control
+         *     turned off". Just install ourselves as the foreground
+         *     pgrp in the existing session.
+         *
+         *   otherwise — no session owns the slave as ctty (typical for
+         *     openpty(3) followed by setsid+dup2 in the caller, as in
+         *     truenas-nsexec's cli.py), or another session does and we
+         *     want our own. Take a fresh session and claim the slave.
+         *
          * Guarded on isatty(0) so non-interactive callers don't get a
          * spurious new session. */
         if (isatty(0)) {
-            (void)setsid();
-            (void)ioctl(0, TIOCSCTTY, NULL);
+            pid_t my_sid = getsid(0);
+            pid_t tty_sid = tcgetsid(0);
+            if (tty_sid == my_sid) {
+                (void)setpgid(0, 0);
+                (void)tcsetpgrp(0, getpid());
+            } else {
+                (void)setsid();
+                (void)ioctl(0, TIOCSCTTY, NULL);
+            }
         }
 
         /* PR_SET_NO_NEW_PRIVS: setuid / file-cap binaries inside the
