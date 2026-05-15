@@ -65,10 +65,14 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         ]
         # We will have to handle GPU's specially
         # For AMD case, we need to add /dev/kfd once even if multiple GPUs are being specified
-        if gpu_device := next((
-            device for device in self.domain.configuration.devices
-            if isinstance(device, GPUDevice) and device.gpu_type.lower() in ('amd', 'nvidia')
-        ), None):
+        if gpu_device := next(
+            (
+                device
+                for device in self.domain.configuration.devices
+                if isinstance(device, GPUDevice) and device.gpu_type.lower() in ("amd", "nvidia")
+            ),
+            None,
+        ):
             devices_xml.extend(gpu_device.gpu.driver_xml())
 
         return devices_xml
@@ -93,17 +97,29 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         # which is the correct behavior for privileged containers (idmap=None).
         idmap = self.domain.configuration.idmap
         if idmap:
-            children.append(xml_element("idmap", children=[
-                xml_element("uid", attributes={
-                    "start": "0",
-                    "target": str(idmap.uid.target),
-                    "count": str(idmap.uid.count),
-                }),
-                xml_element("gid", attributes={
-                    "start": "0",
-                    "target": str(idmap.gid.target),
-                    "count": str(idmap.gid.count),
-                }),
-            ]))
+            idmap_children = []
+            for item in idmap.uid:
+                idmap_children.append(
+                    xml_element(
+                        "uid",
+                        attributes={
+                            "start": str(item.start),
+                            "target": str(item.target),
+                            "count": str(item.count),
+                        },
+                    )
+                )
+            for item in idmap.gid:
+                idmap_children.append(
+                    xml_element(
+                        "gid",
+                        attributes={
+                            "start": str(item.start),
+                            "target": str(item.target),
+                            "count": str(item.count),
+                        },
+                    )
+                )
+            children.append(xml_element("idmap", children=idmap_children))
 
         return children
