@@ -24,9 +24,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/capability.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 
@@ -411,6 +413,29 @@ py_enter_and_exec(PyObject *self, PyObject *args)
             if (setresuid(0, 0, 0) != 0) _exit(126);
         }
 
+        /* Claim the slave as ctty here in the in-container PID ns
+         * (rather than caller-side) so the recorded foreground pgid
+         * is a pid_t visible inside the container. Only when no
+         * session already owns the slave:
+         *
+         *  - tcgetsid(0) != getsid(0): nobody's ctty (cli.py
+         *    interactive: openpty + caller setsid + dup2). setsid +
+         *    TIOCSCTTY claims it.
+         *
+         *  - tcgetsid(0) == getsid(0): caller's session already owns
+         *    the slave (forkpty(3) in truenas/middleware's webshell;
+         *    bash's tty when run from a pipeline). Don't touch:
+         *    setsid would detach into a ctty-less session +
+         *    TIOCSCTTY EPERM; setpgid + tcsetpgrp instead would
+         *    SIGTTOU-stop us (parent's waitpid hangs) or, if
+         *    SIGTTOU-ignored, steal foreground from pipeline
+         *    siblings. Acceptable cost: an interactive shell may
+         *    print "Cannot set tty process group" on exit. */
+        if (isatty(0) && tcgetsid(0) != getsid(0)) {
+            (void)setsid();
+            (void)ioctl(0, TIOCSCTTY, NULL);
+        }
+
         /* PR_SET_NO_NEW_PRIVS: setuid / file-cap binaries inside the
          * container's rootfs cannot grant privileges across the upcoming
          * execve. Without this, a setuid-root binary in the rootfs would
@@ -420,8 +445,19 @@ py_enter_and_exec(PyObject *self, PyObject *args)
          * here in the child (right before exec) is sufficient. */
         if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) _exit(125);
 
-        execv(argv[0], argv);
-        /* execv only returns on failure. */
+        /* execvp, not execv: argv[0] may be a bare command name (e.g.
+         * "bash"), resolved against the PATH the caller exported into
+         * our environment. PR_SET_NO_NEW_PRIVS above prevents PATH-hit
+         * setuid binaries from gaining privilege across the exec. On
+         * failure, surface strerror to fd 2 before exiting — dropping
+         * to _exit(127) with no diagnostic (the prior behaviour) made
+         * the failure indistinguishable from a successful immediate
+         * exit. Exit codes follow POSIX shell convention: 127 for
+         * command-not-found, 126 for found-but-not-executable. */
+        execvp(argv[0], argv);
+        int saved = errno;
+        dprintf(2, "truenas_pylibvirt.nsexec: exec %s: %s\n", argv[0], strerror(saved));
+        if (saved == EACCES || saved == ENOEXEC) _exit(126);
         _exit(127);
     }
 
