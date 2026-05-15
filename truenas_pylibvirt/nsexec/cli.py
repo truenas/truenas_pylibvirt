@@ -14,8 +14,9 @@ Limitations (see the package docstring):
   ``setresuid(0)`` / ``setresgid(0)`` in the post-fork child and has no
   chdir hook.
 
-Flags must be passed before the positional target. Anything after the
-target (and any ``--``) becomes the in-container command.
+Non-flag tokens after the positional target form the in-container
+command. Use ``--`` to terminate option parsing when those tokens
+include their own flags (e.g. ``truenas-nsexec ct -- ls -lh /``).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ import sys
 import termios
 import tty
 import uuid as _uuid
+from typing import NoReturn
 from xml.etree import ElementTree
 
 import libvirt
@@ -53,7 +55,7 @@ DEFAULT_HOME = "/root"
 DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
-def _die(message: str, code: int = 2) -> None:
+def _die(message: str, code: int = 2) -> NoReturn:
     sys.stderr.write(f"truenas-nsexec: {message}\n")
     sys.exit(code)
 
@@ -69,6 +71,12 @@ def _silence_libvirt_errors() -> None:
     handled. Mirrors the no-op handler installed by the in-process
     ``ConnectionManager`` so this CLI behaves consistently with the
     middleware path. Real failure messaging is emitted via :func:`_die`.
+
+    The handler is process-local state in the libvirt Python binding and
+    has no need to be restored: ``truenas-nsexec`` is a short-lived CLI
+    in its own process, so the registration disappears with the process
+    on exit. It cannot affect the middleware, which runs in a separate
+    process and sets its own handler in :mod:`.libvirtd.connection_manager`.
     """
     libvirt.registerErrorHandler(lambda _ctx, _err: None, None)
 
@@ -201,8 +209,20 @@ def _relay(stdin_fd: int, master_fd: int) -> None:
     No decoding — raw bytes pass straight through; the host terminal
     owns encoding. Stops when the master returns EIO (slave closed by
     the last in-container process) or EOF.
+
+    PTY masters cannot be half-closed (there is no separate write side
+    to shut down), so when the host stdin closes we instead write the
+    slave's VEOF character once. The in-container tty discipline turns
+    that into a zero-byte ``read(2)`` for canonical-mode readers
+    (shells, ``cat``, ``read``), so they don't hang waiting for more
+    input. Programs that put the tty in raw mode just receive the byte
+    verbatim; that's the standard POSIX terminal EOF convention.
     """
     read_fds = [stdin_fd, master_fd]
+    try:
+        veof = termios.tcgetattr(master_fd)[6][termios.VEOF]
+    except (termios.error, OSError, IndexError):
+        veof = b"\x04"
     while True:
         try:
             ready, _, _ = select.select(read_fds, [], [])
@@ -224,13 +244,14 @@ def _relay(stdin_fd: int, master_fd: int) -> None:
             try:
                 data = os.read(stdin_fd, 4096)
             except OSError:
-                # stdin failed — stop polling it but keep relaying output
-                read_fds = [master_fd]
-                continue
+                data = b""
             if not data:
-                # Host stdin closed (e.g., piped input ran out). Don't
-                # break the loop — the in-container process may still
-                # be producing output we need to forward.
+                # Host stdin closed (piped input ran out, or read
+                # failed). Signal EOF to the in-container reader via
+                # VEOF, then stop polling stdin but keep relaying
+                # output until the slave exits.
+                with contextlib.suppress(OSError):
+                    os.write(master_fd, veof)
                 read_fds = [master_fd]
                 continue
             os.write(master_fd, data)
@@ -379,9 +400,9 @@ def get_parser() -> argparse.ArgumentParser:
             "      Look up the container by UUID.\n"
             "\n"
             "Notes:\n"
-            "  Flags must precede the positional <target>. Anything after the\n"
-            "  target (and an optional '--') is treated as the command to run\n"
-            "  inside the container.\n"
+            "  Non-flag tokens after <target> form the in-container command.\n"
+            "  If that command contains its own flags, pass '--' first so\n"
+            "  truenas-nsexec doesn't try to interpret them as its own options.\n"
             "\n"
             "Exit status:\n"
             "  Mirrors the in-container process: its own exit code on normal\n"
@@ -465,13 +486,14 @@ def get_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "command",
-        nargs=argparse.REMAINDER,
+        nargs="*",
         metavar="COMMAND",
         help=(
             "Command and arguments to execute inside the container. Pass "
-            "'--' before the command if it starts with a flag (e.g. "
-            "'truenas-nsexec ct -- ls -lh /'). If omitted, defaults to "
-            f"{' '.join(DEFAULT_COMMAND)}."
+            "'--' between the target and the command when the command "
+            "contains its own flags (e.g. 'truenas-nsexec ct -- ls -lh /'); "
+            "argparse consumes the '--' as an end-of-options marker. If "
+            f"omitted, defaults to {' '.join(DEFAULT_COMMAND)}."
         ),
     )
     return p
