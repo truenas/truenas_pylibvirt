@@ -11,22 +11,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/truenas/middleware:26
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.13
-
-      - name: Install mypy
-        run: pip3 install mypy
-
-      - name: Clone and install truenas_pynetif
-        run: |
-          pip3 install https://github.com/truenas/truenas_pynetif/archive/master.zip
-
       - name: Test
         run: |
-          mypy truenas_pylibvirt/
+          PYTHONPATH=. mypy --strict truenas_pylibvirt/
