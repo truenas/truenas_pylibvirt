@@ -13,7 +13,8 @@ Build-Depends: debhelper-compat (= 12),
                python3-libvirt,
                python3-pytest,
                python3-pyudev,
-               python3-truenas-pynetif
+               python3-truenas-pynetif,
+               python3-truenas-pyos
 Standards-Version: 4.4.1
 Homepage: https://github.com/truenas/truenas_pylibvirt
 
@@ -24,5 +25,6 @@ Depends: ${shlibs:Depends},
          ${python3:Depends},
          python3-libvirt,
          python3-pyudev,
-         python3-truenas-pynetif
+         python3-truenas-pynetif,
+         python3-truenas-pyos
 Description: Convenient wrapper for python3-libvirt
