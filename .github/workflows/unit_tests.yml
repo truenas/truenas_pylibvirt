@@ -9,31 +9,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/truenas/middleware:26
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13'
-
-    - name: Install system dependencies
+    - name: Test
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libvirt-dev libcap-dev pkg-config
-
-    - name: Clone and install truenas_pynetif
-      run: |
-        git clone https://github.com/truenas/truenas_pynetif.git
-        pip install -e truenas_pynetif/
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements-test.txt
-        pip install -e .
-
-    - name: Run tests
-      run: |
-        pytest -v --tb=short tests/
+        PYTHONPATH=. pytest-3 -v --tb=short tests/

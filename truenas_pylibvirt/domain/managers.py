@@ -1,3 +1,4 @@
+from .. import runtime
 from .manager import DomainManager
 from ..libvirtd.connection_manager import ConnectionManager
 
@@ -23,3 +24,19 @@ class DomainManagers:
 
         self.vms_connection = self.connection_manager.create(vms_uri)
         self.vms = DomainManager(self.vms_connection)
+
+    def reconcile_runtime_state(self) -> None:
+        # Sweep /run/truenas_containers/* for per-uuid trees that don't
+        # correspond to an active libvirt domain. Call once at process
+        # startup, after libvirt connections are reachable.
+        #
+        # Aggregation across both managers is required: per-uuid runtime
+        # state is container-only, but if we reconciled per-manager the
+        # VM manager would see container UUIDs as "not in my active set"
+        # and wrongly clean them.
+        active: set[str] = set()
+        for manager in (self.containers, self.vms):
+            for domain in manager.connection.list_domains():
+                if domain.isActive():
+                    active.add(domain.name())
+        runtime.reconcile(active)

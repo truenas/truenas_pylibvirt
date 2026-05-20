@@ -7,6 +7,7 @@ import time
 from typing import Any
 from xml.etree import ElementTree
 
+from .. import runtime
 from ..error import Error, DomainDoesNotExistError
 from ..libvirtd.connection import Connection, DomainEvent, DomainState, VirDomainEvent
 from .base.domain import BaseDomain
@@ -159,6 +160,26 @@ class DomainManager:
             return
 
         if event.event in STOPPED_EVENTS:
+            # Happy path: contextmanagers unwind first and undo their own
+            # per-device staging. Wrapped because one device's cleanup
+            # failing must not block the runtime sweep below.
             with self.started_domains_lock:
                 if started_domain := self.started_domains.pop(event.uuid, None):
-                    started_domain.cleanup()
+                    try:
+                        started_domain.cleanup()
+                    except Exception:
+                        logger.exception(
+                            "StartedDomain cleanup failed for uuid %s; "
+                            "runtime sweep will reconcile",
+                            event.uuid,
+                        )
+
+                # Authoritative reconciliation of durable runtime state.
+                # Independent of `started_domains`, which is empty after a
+                # middleware restart even when libvirt-managed containers are
+                # still running. Harmless for VMs: no `/run/truenas_containers/*`
+                # entries match their UUIDs, so this is a no-op.
+                try:
+                    runtime.cleanup_for_uuid(event.uuid)
+                except Exception:
+                    logger.exception("Runtime state cleanup failed for uuid %s", event.uuid)

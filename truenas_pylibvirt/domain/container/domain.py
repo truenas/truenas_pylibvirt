@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 from typing import Any, Generator
 
+from ... import runtime
 from ...error import Error
 from ..base.domain import BaseDomain
 from .configuration import ContainerDomainConfiguration, ContainerIdmapConfigurationItem
@@ -26,7 +27,7 @@ class ContainerDomain(BaseDomain):
             # Prevent `Failure in libvirt_lxc startup: Failed to create /mnt/tank/container/.oldroot: Permission denied`
             (pathlib.Path(self.configuration.root) / ".oldroot").mkdir(mode=0o0755, exist_ok=True)
 
-            idmapped_root = f"/run/truenas_containers/root/{self.configuration.uuid}"
+            idmapped_root = os.path.join(runtime.ROOTFS_RUNTIME_ROOT, self.configuration.uuid)
             os.makedirs(idmapped_root, exist_ok=True)
 
             idmap_spec = " ".join(
@@ -50,6 +51,9 @@ class ContainerDomain(BaseDomain):
                 root = idmapped_root
                 # subprocess.run(["mount", "--make-rshared", idmapped_root], capture_output=True, check=True)
             except subprocess.CalledProcessError as e:
+                # Symmetric with FilesystemDevice's failure path: leave no
+                # half-created dir for the startup reconcile to mop up.
+                runtime.cleanup_for_uuid(self.configuration.uuid)
                 raise Error(
                     f"Unable to set up idmapped root: {e.cmd} returned code {e.returncode}:\n{e.stderr.strip()}"
                 ) from None
@@ -58,14 +62,12 @@ class ContainerDomain(BaseDomain):
             yield ContainerDomainContext(root=root)
         finally:
             if idmapped_root is not None:
-                try:
-                    subprocess.run(["umount", idmapped_root], capture_output=True, check=True)
-                except subprocess.CalledProcessError as e:
-                    raise Error(
-                        f"Unable to umount idmapped root: {e.cmd} returned code {e.returncode}:\n{e.stderr.strip()}"
-                    ) from None
-
-                os.rmdir(idmapped_root)
+                # Best-effort. The authoritative reconciler is
+                # runtime.cleanup_for_uuid (called from the STOPPED event
+                # callback in DomainManager), so a failure here must not
+                # raise -- otherwise it would mask a more interesting
+                # upstream error and prevent siblings' cleanup.
+                runtime.umount_and_rmdir(idmapped_root)
 
     def pid(self) -> int | None:
         pid_path = f"/var/run/libvirt/lxc/{self.configuration.uuid}.pid"
