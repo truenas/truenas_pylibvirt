@@ -4,13 +4,15 @@ import contextlib
 from dataclasses import dataclass
 import os
 import pathlib
-import subprocess
 from typing import Any, Generator
+
+import truenas_os
+from truenas_os_pyutils.namespace import idmap_userns
 
 from ... import runtime
 from ...error import Error
 from ..base.domain import BaseDomain
-from .configuration import ContainerDomainConfiguration, ContainerIdmapConfigurationItem
+from .configuration import ContainerDomainConfiguration
 from .xml import ContainerDomainXmlGenerator
 
 
@@ -30,33 +32,56 @@ class ContainerDomain(BaseDomain):
             idmapped_root = os.path.join(runtime.ROOTFS_RUNTIME_ROOT, self.configuration.uuid)
             os.makedirs(idmapped_root, exist_ok=True)
 
-            idmap_spec = " ".join(
-                [
-                    self._x_mount_idmap("u", idmap.uid),
-                    self._x_mount_idmap("g", idmap.gid),
-                ]
-            )
+            uid_map = [
+                truenas_os.create_idmap_mapping(item.start, item.target, item.count)
+                for item in idmap.uid
+            ]
+            gid_map = [
+                truenas_os.create_idmap_mapping(item.start, item.target, item.count)
+                for item in idmap.gid
+            ]
+
+            tree_fd: int | None = None
+            attached = False
             try:
-                subprocess.run(
-                    [
-                        "mount",
-                        "-o",
-                        f"bind,X-mount.idmap={idmap_spec}",
-                        self.configuration.root,
-                        idmapped_root,
-                    ],
-                    capture_output=True,
-                    check=True,
-                )
+                with idmap_userns(uid_map, gid_map) as userns_fd:
+                    tree_fd = truenas_os.open_tree(
+                        path=self.configuration.root,
+                        flags=truenas_os.OPEN_TREE_CLONE | truenas_os.OPEN_TREE_CLOEXEC,
+                    )
+                    # Kernel rejects combining MOUNT_ATTR_IDMAP with a
+                    # propagation change in a single mount_setattr call,
+                    # so apply them in sequence on the still-detached tree.
+                    truenas_os.mount_setattr(
+                        path="",
+                        dirfd=tree_fd,
+                        attr_set=truenas_os.MOUNT_ATTR_IDMAP,
+                        userns_fd=userns_fd,
+                        flags=truenas_os.AT_EMPTY_PATH,
+                    )
+                    truenas_os.mount_setattr(
+                        path="",
+                        dirfd=tree_fd,
+                        propagation=truenas_os.MS_SLAVE,
+                        flags=truenas_os.AT_EMPTY_PATH,
+                    )
+                    truenas_os.move_mount(
+                        from_path="",
+                        from_dirfd=tree_fd,
+                        to_path=idmapped_root,
+                        flags=truenas_os.MOVE_MOUNT_F_EMPTY_PATH,
+                    )
+                    attached = True
                 root = idmapped_root
-                # subprocess.run(["mount", "--make-rshared", idmapped_root], capture_output=True, check=True)
-            except subprocess.CalledProcessError as e:
-                # Symmetric with FilesystemDevice's failure path: leave no
-                # half-created dir for the startup reconcile to mop up.
-                runtime.cleanup_for_uuid(self.configuration.uuid)
-                raise Error(
-                    f"Unable to set up idmapped root: {e.cmd} returned code {e.returncode}:\n{e.stderr.strip()}"
-                ) from None
+            except OSError as e:
+                raise Error(f"Unable to set up idmapped root: {e}") from None
+            finally:
+                if tree_fd is not None:
+                    os.close(tree_fd)
+                if not attached:
+                    # Symmetric with FilesystemDevice's failure path: leave no
+                    # half-created dir for the startup reconcile to mop up.
+                    runtime.cleanup_for_uuid(self.configuration.uuid)
 
         try:
             yield ContainerDomainContext(root=root)
@@ -82,9 +107,6 @@ class ContainerDomain(BaseDomain):
 
     def undefine(self, libvirt_domain: Any) -> None:
         libvirt_domain.undefine()
-
-    def _x_mount_idmap(self, prefix: str, items: list[ContainerIdmapConfigurationItem]) -> str:
-        return " ".join(f"{prefix}:{item.start}:{item.target}:{item.count}" for item in items)
 
 
 @dataclass
