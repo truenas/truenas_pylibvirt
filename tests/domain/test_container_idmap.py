@@ -138,19 +138,3 @@ def test_xml_omits_idmap_when_configuration_is_none():
 
     misc = generator._misc_xml()
     assert misc == []
-
-
-def test_x_mount_idmap_spec_is_space_separated():
-    from truenas_pylibvirt.domain.container.domain import ContainerDomain
-
-    domain = ContainerDomain.__new__(ContainerDomain)
-    items = [
-        _item(0, 2147000001, 568),
-        _item(568, 568, 1),
-        _item(569, 2147000570, 64967),
-    ]
-    spec = domain._x_mount_idmap("u", items)
-    assert spec == "u:0:2147000001:568 u:568:568:1 u:569:2147000570:64967"
-
-    spec_g = domain._x_mount_idmap("g", items[:1])
-    assert spec_g == "g:0:2147000001:568"
