@@ -97,6 +97,58 @@ def mock_exists_factory(existing_files: set[str]):
         set(),
         None,
     ),
+    # AAVMF: plain CODE -> plain VARS
+    (
+        'AAVMF_CODE.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.fd',
+    ),
+    # AAVMF: no-secboot CODE -> plain VARS (the "no-" must not trip secboot detection)
+    (
+        'AAVMF_CODE.no-secboot.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.fd',
+    ),
+    # AAVMF: ms CODE -> ms VARS
+    (
+        'AAVMF_CODE.ms.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd', '/usr/share/AAVMF/AAVMF_VARS.ms.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.ms.fd',
+    ),
+    # AAVMF: secboot CODE -> ms VARS
+    (
+        'AAVMF_CODE.secboot.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd', '/usr/share/AAVMF/AAVMF_VARS.ms.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.ms.fd',
+    ),
+    # AAVMF: secboot.strictnx CODE -> ms VARS
+    (
+        'AAVMF_CODE.secboot.strictnx.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd', '/usr/share/AAVMF/AAVMF_VARS.ms.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.ms.fd',
+    ),
+    # AAVMF: snakeoil CODE -> snakeoil VARS
+    (
+        'AAVMF_CODE.snakeoil.fd',
+        {
+            '/usr/share/AAVMF/AAVMF_VARS.fd',
+            '/usr/share/AAVMF/AAVMF_VARS.ms.fd',
+            '/usr/share/AAVMF/AAVMF_VARS.snakeoil.fd',
+        },
+        '/usr/share/AAVMF/AAVMF_VARS.snakeoil.fd',
+    ),
+    # AAVMF: snakeoil fallback to ms when snakeoil VARS missing
+    (
+        'AAVMF_CODE.snakeoil.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd', '/usr/share/AAVMF/AAVMF_VARS.ms.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.ms.fd',
+    ),
+    # AAVMF: secboot fallback to plain when ms VARS missing
+    (
+        'AAVMF_CODE.secboot.fd',
+        {'/usr/share/AAVMF/AAVMF_VARS.fd'},
+        '/usr/share/AAVMF/AAVMF_VARS.fd',
+    ),
     # Invalid filename returns None
     (
         'some_other_file.fd',
