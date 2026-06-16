@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generator
@@ -18,6 +19,10 @@ from .base import Device, DeviceXmlContext
 
 if TYPE_CHECKING:
     from ..libvirtd.connection import Connection
+
+
+# libvirt's defineXML only parses colon-separated MAC addresses.
+MAC_ADDRESS_RE = re.compile(r'^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
 
 
 class NICDeviceType(enum.Enum):
@@ -114,8 +119,13 @@ class NICDevice(Device):
                 ('trust_guest_rx_filters', 'This can only be set when "type" of NIC device is "VIRTIO"')
             )
 
-        if self.mac and self.mac.lower().startswith('ff'):
-            verrors.append(
-                ('mac', 'MAC address must not start with `ff`')
-            )
+        if self.mac:
+            if not MAC_ADDRESS_RE.match(self.mac):
+                verrors.append(
+                    ('mac', 'MAC address must be a colon-separated hexadecimal value (e.g. `00:a0:99:7e:bb:8a`)')
+                )
+            elif self.mac.lower().startswith('ff'):
+                verrors.append(
+                    ('mac', 'MAC address must not start with `ff`')
+                )
         return verrors
