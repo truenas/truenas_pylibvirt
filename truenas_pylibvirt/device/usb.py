@@ -39,15 +39,39 @@ class USBDevice(Device):
                 ],
             ),
         ]
+        bus_no = None
         if self.controller_type:
+            bus_no = context.counters.usb_controller_no(self.controller_type)
             children.append(
                 xml_element(
                     "address",
                     attributes={
                         "type": "usb",
-                        "bus": str(context.counters.usb_controller_no(self.controller_type)),
+                        "bus": str(bus_no),
                     },
                 ),
+            )
+
+        controllers = []
+        # The nec-xhci controller at index 0 is supplied by the display device (or, lacking one,
+        # auto-added by libvirt), so a USB device never emits it itself. For other types the
+        # controller is emitted once and shared by every device of that type; emitting it per
+        # device produces duplicate controllers that libvirt rejects with "Duplicate USB
+        # controllers with index N".
+        if (
+            self.controller_type
+            and self.controller_type != 'nec-xhci'
+            and context.counters.should_emit_usb_controller(self.controller_type)
+        ):
+            controllers.append(
+                xml_element(
+                    "controller",
+                    attributes={
+                        "type": "usb",
+                        "index": str(bus_no),
+                        "model": self.controller_type,
+                    },
+                )
             )
 
         return [
@@ -60,18 +84,7 @@ class USBDevice(Device):
                 },
                 children=children,
             ),
-            *(
-                [
-                    xml_element(
-                        "controller",
-                        attributes={
-                            "type": "usb",
-                            "index": str(context.counters.usb_controller_no(self.controller_type)),
-                            "model": self.controller_type
-                        }
-                    )
-                ] if self.controller_type and self.controller_type != 'nec-xhci' else []
-            )
+            *controllers,
         ]
 
     def identity_impl(self) -> str:
