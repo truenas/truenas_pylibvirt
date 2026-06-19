@@ -35,6 +35,9 @@ def get_cpu_model_choices() -> dict[str, dict[str, str]]:
     # Process architectures whose cpu_map XML files we parse
     for arch in index_xml.findall('.//arch[@name]'):
         arch_name = arch.get('name')
+        if arch_name is None:
+            continue
+
         truenas_archs = _ARCH_MAP.get(arch_name)
         if truenas_archs is None:
             continue
