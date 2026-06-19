@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import platform
 import shlex
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
 from ...device.display import DisplayDevice, DisplayDeviceType
+from ...utils import kvm_supported
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
 from .configuration import VmBootloader, VmCpuMode
 from ...utils.cpu import get_cpu_model_choices
-from ...utils.ovmf import get_ovmf_vars_file
+from ...utils.ovmf import AAVMF_DIR, OVMF_DIR, get_ovmf_vars_file
 
 if TYPE_CHECKING:
     from .domain import VmDomain
@@ -20,7 +22,18 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
     domain: VmDomain
 
     def _type(self) -> str:
-        return "kvm"
+        if not kvm_supported():
+            return "qemu"
+        guest_arch = self.domain.configuration.arch_type
+        if not guest_arch:
+            return "kvm"
+        host_arch = platform.machine()
+        if guest_arch == host_arch:
+            return "kvm"
+        # KVM-x86 accelerates 32-bit guests on 64-bit hosts
+        if host_arch == "x86_64" and guest_arch in ("i686", "i386"):
+            return "kvm"
+        return "qemu"
 
     def _os_xml(self) -> ElementTree.Element:
         hvm_attributes = {}
@@ -38,15 +51,21 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         ]
 
         if self.domain.configuration.bootloader == VmBootloader.UEFI:
+            bootloader_ovmf = self.domain.configuration.bootloader_ovmf
+            is_aarch64 = bootloader_ovmf.startswith('AAVMF_CODE')
+            firmware_dir = AAVMF_DIR if is_aarch64 else OVMF_DIR
+            # secure='yes' is the x86 SMM-based secure-boot signal -- libvirt
+            # only accepts it on q35 machines. On aarch64, secure boot is
+            # enforced by the AAVMF firmware variant itself (AAVMF_CODE.ms.fd
+            # etc.), so we omit the attribute.
+            loader_attrs = {"readonly": "yes", "type": "pflash"}
+            if not is_aarch64:
+                loader_attrs["secure"] = "yes" if self.domain.configuration.enable_secure_boot else "no"
             children.extend([
                 xml_element(
                     "loader",
-                    attributes={
-                        "readonly": "yes",
-                        "secure": "yes" if self.domain.configuration.enable_secure_boot else "no",
-                        "type": "pflash",
-                    },
-                    text=f"/usr/share/OVMF/{self.domain.configuration.bootloader_ovmf}",
+                    attributes=loader_attrs,
+                    text=f"{firmware_dir}/{bootloader_ovmf}",
                 ),
                 xml_element(
                     "nvram",
@@ -75,7 +94,8 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         ))
 
         if self.domain.configuration.cpu_mode == VmCpuMode.CUSTOM:
-            if (model := self.domain.configuration.cpu_model) and model in get_cpu_model_choices():
+            arch = self.domain.configuration.arch_type or 'x86_64'
+            if (model := self.domain.configuration.cpu_model) and model in get_cpu_model_choices().get(arch, {}):
                 # Right now this is best effort for the domain to start with specified CPU Model and not fallback
                 # However if some features are missing in the host, qemu will right now still start the domain
                 # and mark them as missing. We should perhaps make this configurable in the future to control
@@ -176,9 +196,14 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
             ))
 
         if self.domain.configuration.trusted_platform_module:
+            # tpm-crb sits on x86's LPC bus; the aarch64 virt machine has no LPC.
+            # libvirt's model attribute accepts 'tpm-tis' for aarch64; libvirt
+            # translates it to qemu's tpm-tis-device when emitting the cmdline.
+            arch_type = self.domain.configuration.arch_type or 'x86_64'
+            tpm_model = 'tpm-tis' if arch_type == 'aarch64' else 'tpm-crb'
             children.append(xml_element(
                 "tpm",
-                attributes={"model": "tpm-crb"},
+                attributes={"model": tpm_model},
                 children=[
                     xml_element(
                         "backend", attributes={"type": "emulator", "version": "2.0", "persistent_state": "yes"},
@@ -210,6 +235,14 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         return list(children)
 
     def _features_xml_children(self) -> list[ElementTree.Element]:
+        arch_type = self.domain.configuration.arch_type or 'x86_64'
+
+        # aarch64 (virt) accepts <acpi/> but rejects x86-specific feature elements
+        # (<apic>, <msrs>, <kvm><hidden>, <hyperv>, <smm>). Secure boot on aarch64
+        # is signaled via <loader secure='yes'/> in _os_xml(), not via <smm>.
+        if arch_type == 'aarch64':
+            return [xml_element("acpi")]
+
         features = [
             xml_element("acpi"),
             xml_element("apic"),
