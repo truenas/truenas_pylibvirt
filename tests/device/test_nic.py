@@ -91,6 +91,11 @@ def test_nic_identity(mock_device_delegate):
 @pytest.mark.parametrize("mac,expected_error", [
     ("00:a0:99:7e:bb:8a", None),  # Valid MAC
     ("ff:a0:99:7e:bb:8a", "MAC address must not start with"),  # Invalid - starts with ff
+    ("10-66-6a-1f-f1-b1", "MAC address must be a colon-separated"),  # Invalid - dash separators
+    ("10-66-6A-1F-F1-B1", "MAC address must be a colon-separated"),  # Invalid - dash separators, uppercase
+    ("00a0997ebb8a", "MAC address must be a colon-separated"),  # Invalid - no separators
+    ("00:a0:99:7e:bb", "MAC address must be a colon-separated"),  # Invalid - too short
+    ("gg:gg:gg:gg:gg:gg", "MAC address must be a colon-separated"),  # Invalid - non-hex digits
 ])
 def test_nic_mac_validation(mac, expected_error, mock_device_delegate):
     """Test NIC MAC address validation."""
