@@ -9,7 +9,7 @@ from typing import Any, Callable, TYPE_CHECKING
 
 import libvirt
 
-from ..error import Error
+from ..error import Error, is_no_domain_error
 
 if TYPE_CHECKING:
     from .connection_manager import ConnectionManager
@@ -98,7 +98,7 @@ class Connection:
         try:
             return self.connection.lookupByName(uuid)
         except libvirt.libvirtError as e:
-            if e.err[0] == libvirt.VIR_ERR_NO_DOMAIN:
+            if is_no_domain_error(e):
                 return None
 
             raise
