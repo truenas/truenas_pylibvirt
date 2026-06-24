@@ -8,6 +8,7 @@ import os
 from typing import Any, Callable, TYPE_CHECKING
 
 import libvirt
+import libvirt_qemu
 
 from ..error import Error, is_no_domain_error
 
@@ -105,6 +106,13 @@ class Connection:
 
     def domain_memory_usage(self, domain: Any) -> int:
         return int(domain.memoryStats().get("actual", 0) * 1024)
+
+    def guest_agent_command(self, domain: Any, command: str, timeout: int = 30) -> str:
+        """Send a QEMU guest agent command and return the raw JSON response string.
+
+        Raises libvirt.libvirtError if the guest agent is unavailable or times out.
+        """
+        return str(libvirt_qemu.qemuAgentCommand(domain, command, timeout, 0))
 
     def domain_state(self, domain: Any) -> DomainState:
         return {
