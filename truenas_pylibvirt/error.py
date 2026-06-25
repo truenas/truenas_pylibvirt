@@ -1,6 +1,6 @@
 import libvirt
 
-__all__ = ["Error", "DomainDoesNotExistError", "is_no_domain_error"]
+__all__ = ["Error", "DomainDoesNotExistError", "GuestAgentError", "is_no_domain_error"]
 
 
 class Error(Exception):
@@ -8,6 +8,10 @@ class Error(Exception):
 
 
 class DomainDoesNotExistError(Error):
+    pass
+
+
+class GuestAgentError(Error):
     pass
 
 
