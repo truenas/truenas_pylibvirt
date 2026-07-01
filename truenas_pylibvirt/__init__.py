@@ -1,5 +1,5 @@
 from .device.storage import DiskStorageDevice, StorageDeviceType, StorageDeviceIoType  # noqa
-from .device.nic import NICDevice, NICDeviceModel, NICDeviceType  # noqa
+from .device.nic import NICDevice, NICDeviceModel, NICDeviceType, PciAddress  # noqa
 from .domain.base.configuration import Time  # noqa
 from .domain.base.domain import BaseDomain  # noqa
 from .domain.container.configuration import (  # noqa
@@ -37,6 +37,7 @@ __all__ = [
     'NICDevice',
     'NICDeviceModel',
     'NICDeviceType',
+    'PciAddress',
     'ServiceDelegate',
     'StorageDeviceIoType',
     'StorageDeviceType',

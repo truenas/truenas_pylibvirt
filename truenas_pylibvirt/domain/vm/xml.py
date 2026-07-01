@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
 from ...device.display import DisplayDevice, DisplayDeviceType
+from ...device.nic import NICDevice
 from ...utils import kvm_supported
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
@@ -169,8 +170,45 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return []
 
+    def _pci_expansion_controllers(self) -> list[ElementTree.Element]:
+        """Inject PCI expansion controllers for any NIC pinned to a non-zero PCI bus.
+
+        q35 machines (pcie-root) use pcie-root-port; i440fx machines (pci-root)
+        use pci-bridge. Machine type is detected from the configuration; an absent
+        or unrecognised machine_type is treated as i440fx (QEMU's default).
+        """
+        needed_buses: set[int] = set()
+        for device in self.domain.configuration.devices:
+            if isinstance(device, NICDevice) and device.pci_address and device.pci_address.bus > 0:
+                needed_buses.add(device.pci_address.bus)
+
+        if not needed_buses:
+            return []
+
+        is_q35 = 'q35' in (self.domain.configuration.machine_type or '')
+
+        controllers = []
+        for bus in sorted(needed_buses):
+            if is_q35:
+                controllers.append(xml_element(
+                    "controller",
+                    attributes={"type": "pci", "model": "pcie-root-port", "index": str(bus)},
+                    children=[
+                        xml_element("target", attributes={"chassis": str(bus), "port": f"0x{0x10 + bus - 1:x}"}),
+                    ],
+                ))
+            else:
+                controllers.append(xml_element(
+                    "controller",
+                    attributes={"type": "pci", "model": "pci-bridge", "index": str(bus)},
+                    children=[
+                        xml_element("target", attributes={"chassisNr": str(bus)}),
+                    ],
+                ))
+        return controllers
+
     def _devices_xml_children(self) -> list[ElementTree.Element]:
-        children = super()._devices_xml_children()
+        children = list(self._pci_expansion_controllers()) + list(super()._devices_xml_children())
 
         display_device_available = False
         spice_server_available = False
