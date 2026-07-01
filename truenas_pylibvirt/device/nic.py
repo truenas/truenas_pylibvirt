@@ -42,15 +42,6 @@ class PciAddress:
     function: int = 0
     domain: int = 0
 
-    def to_xml_element(self) -> ElementTree.Element:
-        return xml_element("address", attributes={
-            "type": "pci",
-            "domain": f"0x{self.domain:04x}",
-            "bus": f"0x{self.bus:02x}",
-            "slot": f"0x{self.slot:02x}",
-            "function": f"0x{self.function:x}",
-        })
-
 
 @dataclass(kw_only=True)
 class NICDevice(Device):
@@ -69,7 +60,13 @@ class NICDevice(Device):
         if self.mac:
             children.append(xml_element("mac", attributes={"address": self.mac}))
         if self.pci_address:
-            children.append(self.pci_address.to_xml_element())
+            children.append(xml_element("address", attributes={
+                "type": "pci",
+                "domain": f"0x{self.pci_address.domain:04x}",
+                "bus": f"0x{self.pci_address.bus:02x}",
+                "slot": f"0x{self.pci_address.slot:02x}",
+                "function": f"0x{self.pci_address.function:x}",
+            }))
 
         match self.type_:
             case NICDeviceType.BRIDGE:
