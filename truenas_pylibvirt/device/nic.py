@@ -43,7 +43,6 @@ class PciAddress:
     domain: int = 0
 
     def to_xml_element(self) -> ElementTree.Element:
-        from ..xml import xml_element
         return xml_element("address", attributes={
             "type": "pci",
             "domain": f"0x{self.domain:04x}",
