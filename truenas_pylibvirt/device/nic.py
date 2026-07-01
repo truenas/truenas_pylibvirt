@@ -35,6 +35,24 @@ class NICDeviceModel(enum.Enum):
     VIRTIO = "VIRTIO"
 
 
+@dataclass
+class PciAddress:
+    bus: int
+    slot: int
+    function: int = 0
+    domain: int = 0
+
+    def to_xml_element(self) -> ElementTree.Element:
+        from ..xml import xml_element
+        return xml_element("address", attributes={
+            "type": "pci",
+            "domain": f"0x{self.domain:04x}",
+            "bus": f"0x{self.bus:02x}",
+            "slot": f"0x{self.slot:02x}",
+            "function": f"0x{self.function:x}",
+        })
+
+
 @dataclass(kw_only=True)
 class NICDevice(Device):
 
@@ -43,6 +61,7 @@ class NICDevice(Device):
     model: NICDeviceModel | None
     mac: str | None
     trust_guest_rx_filters: bool
+    pci_address: PciAddress | None = None
 
     def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
         children = []
@@ -50,6 +69,8 @@ class NICDevice(Device):
             children.append(xml_element("model", attributes={"type": self.model.value.lower()}))
         if self.mac:
             children.append(xml_element("mac", attributes={"address": self.mac}))
+        if self.pci_address:
+            children.append(self.pci_address.to_xml_element())
 
         match self.type_:
             case NICDeviceType.BRIDGE:
