@@ -124,6 +124,11 @@ class NICDevice(Device):
                     nic_attach = default_route.oif_name
         return nic_attach
 
+    def pci_slot(self) -> tuple[int, int] | None:
+        if self.pci_address:
+            return (self.pci_address.bus, self.pci_address.slot)
+        return None
+
     def validate_impl(self) -> list[tuple[str, str]]:
         verrors = []
         if self.source and self.source.startswith('br') and self.trust_guest_rx_filters:

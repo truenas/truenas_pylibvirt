@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from xml.etree import ElementTree as ET
 
-from truenas_pylibvirt.device import NICDevice, NICDeviceType, NICDeviceModel
+from truenas_pylibvirt.device import NICDevice, NICDeviceType, NICDeviceModel, PciAddress
 
 
 @pytest.mark.parametrize("type_,source,model,mac,trust_guest,expected_xml", [
@@ -187,3 +187,28 @@ def test_nic_device_validation(type_, source, model, mac, trust_guest, expected_
         # Filter out any errors from the mock delegate
         validation_errors = [e for e in errors if 'trust_guest_rx_filters' in e[0] or 'mac' in e[0]]
         assert len(validation_errors) == 0, f"Unexpected validation errors: {validation_errors}"
+
+
+def test_nic_pci_slot_without_pci_address(mock_device_delegate):
+    """NIC devices without an explicit pci_address return None from pci_slot(),
+    meaning they are excluded from cross-device PCI conflict checks."""
+    device = NICDevice(
+        type_=NICDeviceType.BRIDGE, source="br0",
+        model=NICDeviceModel.VIRTIO, mac=None,
+        trust_guest_rx_filters=False,
+        device_delegate=mock_device_delegate,
+    )
+    assert device.pci_slot() is None
+
+
+def test_nic_pci_slot_with_pci_address(mock_device_delegate):
+    """NIC devices with a pci_address return (bus, slot), which is used by the
+    cross-device conflict checker to detect collisions."""
+    device = NICDevice(
+        type_=NICDeviceType.BRIDGE, source="br0",
+        model=NICDeviceModel.VIRTIO, mac=None,
+        trust_guest_rx_filters=False,
+        pci_address=PciAddress(bus=1, slot=3),
+        device_delegate=mock_device_delegate,
+    )
+    assert device.pci_slot() == (1, 3)

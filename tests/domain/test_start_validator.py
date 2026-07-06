@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from truenas_pylibvirt.domain.start_validator import StartValidator, StartValidationContext
+from truenas_pylibvirt.domain.start_validator import StartValidator, StartValidationContext, check_pci_slot_conflicts
 from truenas_pylibvirt.device.manager import DeviceManager
 
 
@@ -91,3 +91,70 @@ def test_start_validator_accumulates_errors(mock_connection):
 
     # Should have errors from both devices
     assert len(errors) == 2
+
+
+def test_check_pci_slot_conflicts_no_conflict():
+    """Devices on distinct (bus, slot) pairs produce no errors."""
+    d1 = Mock()
+    d1.pci_slot.return_value = (0, 5)
+    d1.identity.return_value = "dev1"
+    d2 = Mock()
+    d2.pci_slot.return_value = (0, 6)
+    d2.identity.return_value = "dev2"
+    assert check_pci_slot_conflicts([d1, d2]) == []
+
+
+def test_check_pci_slot_conflicts_same_slot():
+    """Two devices claiming the same (bus, slot) produce an error naming both
+    the conflicting device and the one that already holds the slot."""
+    d1 = Mock()
+    d1.pci_slot.return_value = (0, 5)
+    d1.identity.return_value = "dev1"
+    d2 = Mock()
+    d2.pci_slot.return_value = (0, 5)
+    d2.identity.return_value = "dev2"
+    errors = check_pci_slot_conflicts([d1, d2])
+    assert len(errors) == 1
+    assert "dev2" in errors[0][0]
+    assert "bus 0" in errors[0][1] and "slot 5" in errors[0][1]
+    assert "dev1" in errors[0][1]
+
+
+def test_check_pci_slot_conflicts_different_buses():
+    """The same slot number on different buses is not a conflict."""
+    d1 = Mock()
+    d1.pci_slot.return_value = (0, 5)
+    d1.identity.return_value = "dev1"
+    d2 = Mock()
+    d2.pci_slot.return_value = (1, 5)
+    d2.identity.return_value = "dev2"
+    assert check_pci_slot_conflicts([d1, d2]) == []
+
+
+def test_check_pci_slot_conflicts_none_excluded():
+    """Devices returning None from pci_slot() are excluded from conflict checks."""
+    d1 = Mock()
+    d1.pci_slot.return_value = None
+    d2 = Mock()
+    d2.pci_slot.return_value = None
+    assert check_pci_slot_conflicts([d1, d2]) == []
+
+
+def test_start_validator_reports_pci_slot_conflict(mock_connection):
+    """StartValidator.validate() includes PCI slot conflicts alongside other
+    per-device errors."""
+    d1 = Mock()
+    d1.is_available.return_value = True
+    d1.validate_start.return_value = []
+    d1.pci_slot.return_value = (0, 5)
+    d1.identity.return_value = "dev1"
+    d2 = Mock()
+    d2.is_available.return_value = True
+    d2.validate_start.return_value = []
+    d2.pci_slot.return_value = (0, 5)
+    d2.identity.return_value = "dev2"
+
+    validator = StartValidator()
+    context = StartValidationContext(connection=mock_connection, domain_uuid="test-uuid")
+    errors = validator.validate([d1, d2], context)
+    assert any("slot 5" in e[1] for e in errors)
