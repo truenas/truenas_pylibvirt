@@ -124,6 +124,11 @@ class NICDevice(Device):
                     nic_attach = default_route.oif_name
         return nic_attach
 
+    def pci_slot(self) -> tuple[int, int] | None:
+        if self.pci_address:
+            return (self.pci_address.bus, self.pci_address.slot)
+        return None
+
     def validate_impl(self) -> list[tuple[str, str]]:
         verrors = []
         if self.source and self.source.startswith('br') and self.trust_guest_rx_filters:
@@ -145,4 +150,24 @@ class NICDevice(Device):
                 verrors.append(
                     ('mac', 'MAC address must not start with `ff`')
                 )
+
+        if self.pci_address:
+            if self.pci_address.domain != 0:
+                verrors.append((
+                    'pci_address.domain',
+                    'PCI domain must be 0; multi-segment topologies are not supported',
+                ))
+            if self.pci_address.bus == 0:
+                verrors.append((
+                    'pci_address.bus',
+                    'Bus 0 is the root bus; NICs must be placed on a controller bus (>= 1) '
+                    'to avoid conflicts with platform devices',
+                ))
+            if self.pci_address.function != 0:
+                verrors.append((
+                    'pci_address.function',
+                    'Only function 0 is supported; function > 0 requires multifunction=on '
+                    'on function 0, which is not currently emitted',
+                ))
+
         return verrors

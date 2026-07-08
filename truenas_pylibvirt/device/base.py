@@ -25,6 +25,13 @@ class DeviceXmlContext:
     counters: Counters
 
 
+@dataclass
+class QemuArgsContext:
+    # Machine type string as passed to libvirt (e.g. 'pc-q35-10.0', 'virt-9.2').
+    # None means unknown / caller did not specify.
+    machine_type: str | None = None
+
+
 @dataclass(kw_only=True)
 class Device(ABC):
 
@@ -64,6 +71,16 @@ class Device(ABC):
 
     def validate_impl(self) -> list[tuple[str, str]]:
         return []
+
+    def qemu_args(self, context: QemuArgsContext) -> list[str]:
+        # For device types that libvirt cannot model natively; args are injected
+        # into <qemu:commandline> alongside command_line_args.
+        return []
+
+    def pci_slot(self) -> tuple[int, int] | None:
+        # Returns (bus, slot) for devices with an explicit PCI placement.
+        # Used by check_pci_slot_conflicts() to detect cross-device collisions.
+        return None
 
     def validate_start(self, context: StartValidationContext) -> list[tuple[str, str]]:
         """

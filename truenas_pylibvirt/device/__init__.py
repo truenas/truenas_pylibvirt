@@ -5,6 +5,7 @@ from .delegate import DeviceDelegate  # noqa
 from .display import DisplayDevice, DisplayDeviceType  # noqa
 from .filesystem import FilesystemDevice # noqa
 from .gpu import GPUDevice  # noqa
+from .iscsi_disk import ISCSIDiskDevice, ISCSIDiskTarget  # noqa
 from .nic import NICDevice, NICDeviceType, NICDeviceModel, PciAddress  # noqa
 from .pci import PCIDevice  # noqa
 from .storage import DiskStorageDevice, RawStorageDevice, StorageDeviceType, StorageDeviceIoType  # noqa
@@ -19,6 +20,8 @@ __all__ = [
     'DisplayDeviceType',
     'FilesystemDevice',
     'GPUDevice',
+    'ISCSIDiskDevice',
+    'ISCSIDiskTarget',
     'NICDevice',
     'NICDeviceModel',
     'NICDeviceType',

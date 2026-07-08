@@ -5,6 +5,7 @@ import shlex
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
+from ...device.base import QemuArgsContext
 from ...device.display import DisplayDevice, DisplayDeviceType
 from ...device.nic import NICDevice
 from ...utils import kvm_supported
@@ -319,13 +320,20 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
         return features
 
     def _misc_xml(self) -> list[ElementTree.Element]:
+        # Collect raw QEMU args from two sources: the explicit command_line_args
+        # field, and any devices whose libvirt has no native model for (e.g.
+        # ISCSIDiskDevice).  Both land in <qemu:commandline>.
+        all_args = list(shlex.split(self.domain.configuration.command_line_args))
+        ctx = QemuArgsContext(machine_type=self.domain.configuration.machine_type)
+        for device in self.domain.configuration.devices:
+            all_args.extend(device.qemu_args(ctx))
         return [
             xml_element(
                 "commandline",
                 attributes={"xmlns": "http://libvirt.org/schemas/domain/qemu/1.0"},
                 children=[
                     xml_element("arg", attributes={"value": arg})
-                    for arg in shlex.split(self.domain.configuration.command_line_args)
+                    for arg in all_args
                 ],
             ),
         ]
