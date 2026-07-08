@@ -150,4 +150,24 @@ class NICDevice(Device):
                 verrors.append(
                     ('mac', 'MAC address must not start with `ff`')
                 )
+
+        if self.pci_address:
+            if self.pci_address.domain != 0:
+                verrors.append((
+                    'pci_address.domain',
+                    'PCI domain must be 0; multi-segment topologies are not supported',
+                ))
+            if self.pci_address.bus == 0:
+                verrors.append((
+                    'pci_address.bus',
+                    'Bus 0 is the root bus; NICs must be placed on a controller bus (>= 1) '
+                    'to avoid conflicts with platform devices',
+                ))
+            if self.pci_address.function != 0:
+                verrors.append((
+                    'pci_address.function',
+                    'Only function 0 is supported; function > 0 requires multifunction=on '
+                    'on function 0, which is not currently emitted',
+                ))
+
         return verrors

@@ -16,6 +16,22 @@ class StartValidationContext:
     domain_uuid: str
 
 
+def pci_slot_error_for_machine(slot: int, machine_type: str | None) -> str | None:
+    """Return an error string if slot violates the machine topology PCI slot rules, else None.
+
+    PCIe (q35 / aarch64 virt): ports are point-to-point, so slot must be 0.
+    i440fx (PCI bridge): slot 0 is the SHPC controller; usable slots start at 1.
+    Unknown machine type is treated conservatively as i440fx.
+    """
+    mt = machine_type or ''
+    is_pcie = 'q35' in mt or mt.startswith('virt')
+    if is_pcie and slot != 0:
+        return 'PCIe machines (q35 / aarch64 virt) use point-to-point ports; slot must be 0'
+    if not is_pcie and slot == 0:
+        return 'Slot 0 is reserved (SHPC controller) on i440fx PCI bridges; usable slots start at 1'
+    return None
+
+
 def check_pci_slot_conflicts(devices: list[Device]) -> list[tuple[str, str]]:
     """Return (field, error) pairs for any two devices claiming the same (bus, slot).
 

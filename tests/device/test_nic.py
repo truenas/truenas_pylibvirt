@@ -5,6 +5,7 @@ import pytest
 from xml.etree import ElementTree as ET
 
 from truenas_pylibvirt.device import NICDevice, NICDeviceType, NICDeviceModel, PciAddress
+from truenas_pylibvirt.domain.start_validator import pci_slot_error_for_machine
 
 
 @pytest.mark.parametrize("type_,source,model,mac,trust_guest,expected_xml", [
@@ -212,3 +213,61 @@ def test_nic_pci_slot_with_pci_address(mock_device_delegate):
         device_delegate=mock_device_delegate,
     )
     assert device.pci_slot() == (1, 3)
+
+
+@pytest.mark.parametrize("pci_address,expected_error_fields", [
+    # valid: bus >= 1, domain 0, function 0
+    (PciAddress(bus=1, slot=0), []),
+    # domain != 0
+    (PciAddress(bus=1, slot=0, domain=1), ['pci_address.domain']),
+    # bus == 0 (root bus)
+    (PciAddress(bus=0, slot=1), ['pci_address.bus']),
+    # function != 0
+    (PciAddress(bus=1, slot=0, function=1), ['pci_address.function']),
+    # all three invalid at once
+    (PciAddress(bus=0, slot=0, domain=1, function=2), [
+        'pci_address.domain', 'pci_address.bus', 'pci_address.function',
+    ]),
+])
+def test_nic_pci_address_validate_impl(pci_address, expected_error_fields, mock_device_delegate):
+    """validate_impl() catches PciAddress fields that are invalid regardless of machine type:
+    domain must be 0, bus must be >= 1 (root bus is too crowded), function must be 0."""
+    device = NICDevice(
+        type_=NICDeviceType.BRIDGE, source="br0",
+        model=NICDeviceModel.VIRTIO, mac=None,
+        trust_guest_rx_filters=False,
+        pci_address=pci_address,
+        device_delegate=mock_device_delegate,
+    )
+    errors = device.validate()
+    error_fields = [e[0] for e in errors]
+    for f in expected_error_fields:
+        assert f in error_fields, f"Expected error on '{f}', got: {errors}"
+    if not expected_error_fields:
+        pci_errors = [e for e in errors if e[0].startswith('pci_address')]
+        assert pci_errors == [], f"Unexpected pci_address errors: {pci_errors}"
+
+
+@pytest.mark.parametrize("slot,machine_type,expect_error,error_fragment", [
+    # PCIe (q35): slot 0 is the only valid slot on a pcie-root-port
+    (0, "pc-q35-10.0",  False, None),
+    (1, "pc-q35-10.0",  True,  "slot must be 0"),
+    # PCIe (aarch64 virt): same rules as q35
+    (0, "virt-9.2",     False, None),
+    (1, "virt-9.2",     True,  "slot must be 0"),
+    # i440fx: slot 0 is SHPC-reserved
+    (0, "pc-i440fx-9.2", True,  "usable slots start at 1"),
+    (1, "pc-i440fx-9.2", False, None),
+    # unknown machine type treated conservatively as i440fx
+    (0, None,            True,  "usable slots start at 1"),
+    (1, None,            False, None),
+])
+def test_pci_slot_error_for_machine(slot, machine_type, expect_error, error_fragment):
+    """pci_slot_error_for_machine() enforces PCIe point-to-point (slot == 0) and
+    i440fx SHPC-reserved (slot != 0) rules; unknown machine type defaults to i440fx."""
+    result = pci_slot_error_for_machine(slot, machine_type)
+    if expect_error:
+        assert result is not None
+        assert error_fragment in result
+    else:
+        assert result is None
