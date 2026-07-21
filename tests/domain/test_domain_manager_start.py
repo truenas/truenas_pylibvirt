@@ -11,11 +11,18 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+import libvirt
 import pytest
 
 from truenas_pylibvirt.domain.manager import DomainManager
 from truenas_pylibvirt.libvirtd.connection import DomainState
 from truenas_pylibvirt.error import Error
+
+
+def _no_domain_error() -> libvirt.libvirtError:
+    e = libvirt.libvirtError("error")
+    e.err = (libvirt.VIR_ERR_NO_DOMAIN, None, "message", None, None, None, None, -1, -1)
+    return e
 
 
 def _domain(uuid: str = "uuid-1", name: str = "testvm") -> Mock:
@@ -59,6 +66,28 @@ def test_start_when_libvirt_domain_missing_cleans_up_stale_entry(mock_connection
     mock_connection.get_domain.return_value = None
     # Short-circuit right after the stale-entry handling so the full define/create
     # tail does not need mocking.
+    manager.start_validator.validate = Mock(return_value=[("field", "boom")])
+
+    with pytest.raises(Error, match="Cannot start"):
+        manager.start(domain)
+
+    stale.cleanup.assert_called_once()
+    assert domain.configuration.uuid not in manager.started_domains
+
+
+def test_start_when_domain_vanishes_mid_state_query_cleans_up_stale_entry(mock_connection):
+    """The domain can be undefined between get_domain() and the state query;
+    VIR_ERR_NO_DOMAIN there is handled like a missing domain: the stale entry is
+    cleaned up and the start proceeds (here short-circuited at validation)."""
+    manager = DomainManager(mock_connection)
+    domain = _domain()
+
+    stale = Mock()
+    manager.started_domains[domain.configuration.uuid] = stale
+
+    mock_connection.get_domain.return_value = Mock()  # still there at lookup...
+    mock_connection.domain_state.side_effect = _no_domain_error()  # ...gone at query
+
     manager.start_validator.validate = Mock(return_value=[("field", "boom")])
 
     with pytest.raises(Error, match="Cannot start"):

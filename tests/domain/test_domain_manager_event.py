@@ -11,11 +11,18 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+import libvirt
 import pytest
 
 import truenas_pylibvirt.domain.manager as manager_mod
 from truenas_pylibvirt.domain.manager import DomainManager
 from truenas_pylibvirt.libvirtd.connection import DomainEvent, DomainState, VirDomainEvent
+
+
+def _libvirt_error(code: int) -> libvirt.libvirtError:
+    e = libvirt.libvirtError("error")
+    e.err = (code, None, "message", None, None, None, None, -1, -1)
+    return e
 
 
 @pytest.fixture
@@ -78,6 +85,42 @@ def test_undefined_event_with_missing_domain_cleans_up(mock_connection, runtime_
     assert "uuid-1" not in manager.started_domains
     tracked.cleanup.assert_called_once()
     runtime_cleanup.assert_called_once_with("uuid-1")
+
+
+def test_stop_event_when_domain_vanishes_mid_state_query_cleans_up(mock_connection, runtime_cleanup):
+    """The domain can be undefined between get_domain() and the state query;
+    VIR_ERR_NO_DOMAIN there means gone, so clean up as for a missing domain."""
+    manager = DomainManager(mock_connection)
+    tracked = Mock()
+    manager.started_domains["uuid-1"] = tracked
+
+    mock_connection.get_domain.return_value = Mock()  # still there at lookup...
+    mock_connection.domain_state.side_effect = _libvirt_error(libvirt.VIR_ERR_NO_DOMAIN)  # ...gone at query
+
+    manager._domain_event_callback(_event("uuid-1", VirDomainEvent.STOPPED))
+
+    assert "uuid-1" not in manager.started_domains
+    tracked.cleanup.assert_called_once()
+    runtime_cleanup.assert_called_once_with("uuid-1")
+
+
+def test_stop_event_with_other_libvirt_error_propagates_without_cleanup(mock_connection, runtime_cleanup):
+    """A state-query failure other than NO_DOMAIN says nothing about whether the
+    domain is stopped, so it must propagate rather than trigger teardown of a
+    possibly-running domain."""
+    manager = DomainManager(mock_connection)
+    tracked = Mock()
+    manager.started_domains["uuid-1"] = tracked
+
+    mock_connection.get_domain.return_value = Mock()
+    mock_connection.domain_state.side_effect = _libvirt_error(libvirt.VIR_ERR_INTERNAL_ERROR)
+
+    with pytest.raises(libvirt.libvirtError):
+        manager._domain_event_callback(_event("uuid-1", VirDomainEvent.STOPPED))
+
+    assert manager.started_domains["uuid-1"] is tracked
+    tracked.cleanup.assert_not_called()
+    runtime_cleanup.assert_not_called()
 
 
 def test_non_stop_event_is_ignored(mock_connection, runtime_cleanup):

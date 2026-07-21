@@ -8,7 +8,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from .. import runtime
-from ..error import Error, DomainDoesNotExistError
+from ..error import Error, DomainDoesNotExistError, is_no_domain_error
 from ..libvirtd.connection import Connection, DomainEvent, DomainState, VirDomainEvent
 from .base.domain import BaseDomain
 from .start_validator import StartValidator, StartValidationContext
@@ -44,8 +44,7 @@ class DomainManager:
     def start(self, domain: BaseDomain) -> None:
         with self.started_domains_lock:
             if started_domain := self.started_domains.get(domain.configuration.uuid):
-                if libvirt_domain := self.connection.get_domain(domain.configuration.uuid):
-                    domain_state = self.connection.domain_state(libvirt_domain)
+                if (domain_state := self._current_domain_state(domain.configuration.uuid)) is not None:
                     if domain_state not in STOPPED_STATES:
                         # Still running: leave it tracked so its device staging is unwound
                         # by the eventual STOPPED event. Removing it here would drop the
@@ -166,6 +165,25 @@ class DomainManager:
 
         return libvirt_domain
 
+    def _current_domain_state(self, uuid: str) -> DomainState | None:
+        """Live state of the domain, or None if it no longer exists.
+
+        The domain can be undefined between the lookup and the state query,
+        so VIR_ERR_NO_DOMAIN from the state query means gone, the same as a
+        failed lookup.
+        """
+        libvirt_domain = self.connection.get_domain(uuid)
+        if libvirt_domain is None:
+            return None
+
+        try:
+            return self.connection.domain_state(libvirt_domain)
+        except Exception as e:
+            if is_no_domain_error(e):
+                return None
+
+            raise
+
     def _domain_event_callback(self, event: DomainEvent) -> None:
         if event.event not in STOPPED_EVENTS:
             return
@@ -176,11 +194,11 @@ class DomainManager:
             # Re-check the live state under the lock and only tear down when the
             # domain is really gone or stopped now, so a stale event cannot unwind
             # the staging (or unmount the runtime state) of the freshly started
-            # instance. get_domain() returning None means the domain was
-            # undefined -- itself a stop event -- so "missing" means clean up, not
-            # skip.
-            libvirt_domain = self.connection.get_domain(event.uuid)
-            if libvirt_domain is not None and self.connection.domain_state(libvirt_domain) not in STOPPED_STATES:
+            # instance. None means the domain no longer exists (undefined before
+            # the lookup or while querying its state) -- itself a stop event -- so
+            # "missing" means clean up, not skip.
+            domain_state = self._current_domain_state(event.uuid)
+            if domain_state is not None and domain_state not in STOPPED_STATES:
                 return
 
             # Contextmanagers unwind first and undo their own per-device staging.
