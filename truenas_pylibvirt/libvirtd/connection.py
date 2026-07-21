@@ -5,6 +5,7 @@ import enum
 import functools
 import logging
 import os
+import threading
 from typing import Any, Callable, TYPE_CHECKING
 
 import libvirt
@@ -68,22 +69,27 @@ class Connection:
         self.manager = manager
         self.uri = uri
         self._connection = None
+        self._connection_lock = threading.Lock()
         self._domain_event_callbacks: list[DomainEventCallback] = []
 
     @property
     def connection(self) -> Any:
-        # We see isAlive call failed for a user in NAS-109072, it would be better
-        # if we handle this to ensure that system recognises libvirt connection
-        # is no longer active and a new one should be initiated.
-        if (
-            self._connection and
-            self._connection.isAlive() and
-            isinstance(self._connection.listAllDomains(), list)
-        ):
+        # Serialize check+reconnect so concurrent callers don't open (and leak)
+        # multiple connections.
+        with self._connection_lock:
+            if self._connection is not None and self._connection_is_alive(self._connection):
+                return self._connection
+
+            self._open()
             return self._connection
 
-        self._open()
-        return self._connection
+    @staticmethod
+    def _connection_is_alive(connection: Any) -> bool:
+        # NAS-109072: a dead connection raises here instead of returning falsy.
+        try:
+            return bool(connection.isAlive()) and isinstance(connection.listAllDomains(), list)
+        except libvirt.libvirtError:
+            return False
 
     def register_domain_event_callback(self, callback: DomainEventCallback) -> None:
         self._domain_event_callbacks.append(callback)
@@ -143,6 +149,14 @@ class Connection:
         }.get(event, VirDomainEvent.UNKNOWN)
 
     def _open(self) -> None:
+        # Close the connection being replaced so it isn't leaked.
+        if self._connection is not None:
+            old, self._connection = self._connection, None
+            try:
+                old.close()
+            except libvirt.libvirtError:
+                logger.debug("Discarding unusable libvirt connection for %s", self.uri, exc_info=True)
+
         connection = self.manager.open(self.uri)
 
         connection.domainEventRegister(self._libvirt_event_callback, None)
