@@ -43,18 +43,30 @@ class DomainManager:
 
     def start(self, domain: BaseDomain) -> None:
         with self.started_domains_lock:
-            if started_domain := self.started_domains.pop(domain.configuration.uuid, None):
+            if started_domain := self.started_domains.get(domain.configuration.uuid):
                 if libvirt_domain := self.connection.get_domain(domain.configuration.uuid):
                     domain_state = self.connection.domain_state(libvirt_domain)
-                    if domain_state in STOPPED_STATES:
-                        logger.info(
-                            f"Requested to start domain {domain.configuration.name!r}. It is present in "
-                            f"`started_domains`, but its state is {domain_state!r}. This should not happen. "
-                            "Performing clean-up routing."
-                        )
-                        started_domain.cleanup()
-                    else:
+                    if domain_state not in STOPPED_STATES:
+                        # Still running: leave it tracked so its device staging is unwound
+                        # by the eventual STOPPED event. Removing it here would drop the
+                        # only reference to its ExitStack; GC then runs the device
+                        # finalizers against a live domain -- terminating the display proxy
+                        # and unmounting a running container's bind mounts. (The managed PCI
+                        # reattach is refused by libvirt while the device is in use, so the
+                        # passthrough device itself is not pulled from the guest.)
                         raise Error(f"Domain {domain.configuration.name!r} is already started ({domain_state!r}).")
+
+                    logger.info(
+                        f"Requested to start domain {domain.configuration.name!r}. It is present in "
+                        f"`started_domains`, but its state is {domain_state!r}. This should not happen. "
+                        "Performing clean-up routing."
+                    )
+
+                # Present in `started_domains` but not running (stopped out-of-band,
+                # undefined, or a missed STOPPED event). Remove and unwind its staging
+                # explicitly before re-staging below, rather than leaking it to GC.
+                self.started_domains.pop(domain.configuration.uuid, None)
+                started_domain.cleanup()
 
             validation_context = StartValidationContext(
                 connection=self.connection,
@@ -155,31 +167,41 @@ class DomainManager:
         return libvirt_domain
 
     def _domain_event_callback(self, event: DomainEvent) -> None:
-        libvirt_domain = self.connection.get_domain(event.uuid)
-        if libvirt_domain is None:
+        if event.event not in STOPPED_EVENTS:
             return
 
-        if event.event in STOPPED_EVENTS:
-            # Happy path: contextmanagers unwind first and undo their own
-            # per-device staging. Wrapped because one device's cleanup
-            # failing must not block the runtime sweep below.
-            with self.started_domains_lock:
-                if started_domain := self.started_domains.pop(event.uuid, None):
-                    try:
-                        started_domain.cleanup()
-                    except Exception:
-                        logger.exception(
-                            "StartedDomain cleanup failed for uuid %s; "
-                            "runtime sweep will reconcile",
-                            event.uuid,
-                        )
+        with self.started_domains_lock:
+            # A restart (destroy + immediate start) can deliver this stop event
+            # after start() has already re-created and re-tracked the domain.
+            # Re-check the live state under the lock and only tear down when the
+            # domain is really gone or stopped now, so a stale event cannot unwind
+            # the staging (or unmount the runtime state) of the freshly started
+            # instance. get_domain() returning None means the domain was
+            # undefined -- itself a stop event -- so "missing" means clean up, not
+            # skip.
+            libvirt_domain = self.connection.get_domain(event.uuid)
+            if libvirt_domain is not None and self.connection.domain_state(libvirt_domain) not in STOPPED_STATES:
+                return
 
-                # Authoritative reconciliation of durable runtime state.
-                # Independent of `started_domains`, which is empty after a
-                # middleware restart even when libvirt-managed containers are
-                # still running. Harmless for VMs: no `/run/truenas_containers/*`
-                # entries match their UUIDs, so this is a no-op.
+            # Contextmanagers unwind first and undo their own per-device staging.
+            # Wrapped because one device's cleanup failing must not block the
+            # runtime sweep below.
+            if started_domain := self.started_domains.pop(event.uuid, None):
                 try:
-                    runtime.cleanup_for_uuid(event.uuid)
+                    started_domain.cleanup()
                 except Exception:
-                    logger.exception("Runtime state cleanup failed for uuid %s", event.uuid)
+                    logger.exception(
+                        "StartedDomain cleanup failed for uuid %s; "
+                        "runtime sweep will reconcile",
+                        event.uuid,
+                    )
+
+            # Authoritative reconciliation of durable runtime state.
+            # Independent of `started_domains`, which is empty after a
+            # middleware restart even when libvirt-managed containers are
+            # still running. Harmless for VMs: no `/run/truenas_containers/*`
+            # entries match their UUIDs, so this is a no-op.
+            try:
+                runtime.cleanup_for_uuid(event.uuid)
+            except Exception:
+                logger.exception("Runtime state cleanup failed for uuid %s", event.uuid)
