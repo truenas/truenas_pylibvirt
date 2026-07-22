@@ -9,7 +9,22 @@ from .base import Device, DeviceXmlContext, QemuArgsContext
 
 
 # RFC 3720 IQN: iqn.YYYY-MM.<reversed-domain>[:<suffix>]
-IQN_RE = re.compile(r'^iqn\.\d{4}-\d{2}\.[a-zA-Z][a-zA-Z0-9\-\.]*(?::[^\s]*)?$')
+#
+# The suffix character set is intentionally restrictive (RFC 3721 naming-string
+# character set: alphanumerics plus '.', '-', ':'). We MUST NOT admit ',', '=',
+# quotes, backslashes, or whitespace because IQNs are interpolated unquoted
+# into QEMU option strings such as
+#     -drive file=iscsi://<portal>/<iqn>/<lun>,if=none,id=...,format=raw,...
+#     -iscsi initiator-name=<iqn>
+# where those characters would terminate the value and inject sibling
+# key=value options into the same argv token (e.g. an IQN of
+# "iqn.2026-06.net.x:a,readonly=on" would flip the drive to read-only, and
+# ",file=/etc/shadow" would redirect the backing file entirely).
+IQN_RE = re.compile(
+    r'^iqn\.\d{4}-\d{2}\.'
+    r'[a-zA-Z][a-zA-Z0-9\-\.]*'
+    r'(?::[A-Za-z0-9._:\-]+)?$'
+)
 
 
 @dataclass
@@ -40,15 +55,31 @@ class ISCSIDiskDevice(Device):
         return []
 
     def qemu_args(self, context: QemuArgsContext) -> list[str]:
+        # Defense-in-depth: re-verify every field that is interpolated into a
+        # QEMU option string before emitting args, even though validate_impl()
+        # already covers the same ground. A caller that bypasses validate()
+        # (or mutates fields after validation) must not be able to inject
+        # sibling QEMU options through commas/equals in an IQN or portal.
+        if not IQN_RE.match(self.initiator_iqn):
+            raise ValueError(f"Unsafe initiator IQN: {self.initiator_iqn!r}")
+        for t in self.targets:
+            if not IQN_RE.match(t.iqn):
+                raise ValueError(f"Unsafe target IQN: {t.iqn!r}")
+        # portal must parse as an IP address; the URI syntax has no room for
+        # anything else and a hostname here would also be an injection vector.
+        try:
+            addr = ipaddress.ip_address(self.portal_address)
+        except ValueError:
+            raise ValueError(
+                f"Unsafe portal address: {self.portal_address!r} "
+                "(must be an IPv4 or IPv6 literal)"
+            )
+
         mt = context.machine_type or ''
         # q35 and aarch64 virt are both PCIe-native (pcie-root); i440fx uses pci.0.
         root_bus = 'pcie.0' if ('q35' in mt or mt.startswith('virt')) else 'pci.0'
         # IPv6 addresses must be bracketed in iSCSI URIs.
-        try:
-            addr = ipaddress.ip_address(self.portal_address)
-            portal = f"[{self.portal_address}]" if isinstance(addr, ipaddress.IPv6Address) else self.portal_address
-        except ValueError:
-            portal = self.portal_address
+        portal = f"[{self.portal_address}]" if isinstance(addr, ipaddress.IPv6Address) else self.portal_address
         controller_id = f"scsi-iscsi-{self.controller_slot:x}"
         args = [
             "-iscsi", f"initiator-name={self.initiator_iqn}",

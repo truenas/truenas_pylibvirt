@@ -194,6 +194,18 @@ def test_iscsi_disk_target_default_luns():
     (PORTAL_V4, [ISCSIDiskTarget(iqn=VALID_IQN_TARGET)], VALID_IQN_INITIATOR, 0, ["controller_slot"]),
     # controller_slot = 31 (above maximum)
     (PORTAL_V4, [ISCSIDiskTarget(iqn=VALID_IQN_TARGET)], VALID_IQN_INITIATOR, 31, ["controller_slot"]),
+    # QEMU option-string injection via comma in target IQN
+    (PORTAL_V4, [ISCSIDiskTarget(iqn="iqn.2026-06.net.x:a,readonly=on")],
+        VALID_IQN_INITIATOR, 0x15, ["targets.0.iqn"]),
+    # QEMU option-string injection via comma+file= in target IQN
+    (PORTAL_V4, [ISCSIDiskTarget(iqn="iqn.2026-06.net.x:a,file=/etc/shadow")],
+        VALID_IQN_INITIATOR, 0x15, ["targets.0.iqn"]),
+    # QEMU option-string injection via '=' in target IQN
+    (PORTAL_V4, [ISCSIDiskTarget(iqn="iqn.2026-06.net.x:a=b")],
+        VALID_IQN_INITIATOR, 0x15, ["targets.0.iqn"]),
+    # QEMU option-string injection via comma in initiator IQN
+    (PORTAL_V4, [ISCSIDiskTarget(iqn=VALID_IQN_TARGET)],
+        "iqn.2026-06.net.x:a,password=pw", 0x15, ["initiator_iqn"]),
 ])
 def test_validate(portal_address, targets, initiator_iqn, controller_slot, expected_errors, mock_device_delegate):
     """validate_impl() catches invalid addresses, malformed IQNs, empty/negative
@@ -211,3 +223,36 @@ def test_validate(portal_address, targets, initiator_iqn, controller_slot, expec
         assert f in error_fields, f"Expected error on '{f}', got: {errors}"
     if not expected_errors:
         assert errors == [], f"Expected no errors, got: {errors}"
+
+
+# Defense-in-depth: qemu_args() must refuse to emit unsafe values even when
+# validate() was never called (or the field was mutated after validation).
+# These strings are chosen so that if they DID reach the arg list they would
+# inject sibling key=value options into QEMU's comma-separated -drive / -iscsi
+# option syntax.
+
+def test_qemu_args_rejects_injecting_target_iqn():
+    d = _device(targets=[ISCSIDiskTarget(iqn="iqn.2026-06.net.x:a,readonly=on")])
+    with pytest.raises(ValueError, match="target IQN"):
+        d.qemu_args(CTX_Q35)
+
+
+def test_qemu_args_rejects_injecting_initiator_iqn():
+    d = _device(initiator_iqn="iqn.2026-06.net.x:a,password=pw")
+    with pytest.raises(ValueError, match="initiator IQN"):
+        d.qemu_args(CTX_Q35)
+
+
+def test_qemu_args_rejects_non_ip_portal():
+    d = _device(portal_address="evil.example.com,file=/etc/shadow")
+    with pytest.raises(ValueError, match="portal address"):
+        d.qemu_args(CTX_Q35)
+
+
+def test_qemu_args_rejects_field_mutated_after_construction():
+    """Mutating an IQN after construction bypasses validate(); qemu_args()
+    must still refuse to emit unsafe args."""
+    d = _device()
+    d.targets[0].iqn = "iqn.2026-06.net.x:a,readonly=on"
+    with pytest.raises(ValueError, match="target IQN"):
+        d.qemu_args(CTX_Q35)
