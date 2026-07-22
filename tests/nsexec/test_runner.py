@@ -2,6 +2,7 @@
 namespace-fd validation), which must fail cleanly and not leak fds."""
 from __future__ import annotations
 
+import os
 from unittest.mock import Mock
 
 import pytest
@@ -16,14 +17,36 @@ def _dom(domain_id: int = 1234, name: str = "ct") -> Mock:
     return dom
 
 
-def test_not_running_domain_raises_before_opening_namespaces(monkeypatch):
+def test_split_user_fd_classifies_real_fds():
+    """The user-ns fd is found by readlink'ing /proc/self/fd/<n>, not by its
+    position in the list libvirt returns (which is undocumented)."""
+    fds = [
+        os.open("/proc/self/ns/uts", os.O_RDONLY),
+        os.open("/proc/self/ns/user", os.O_RDONLY),
+        os.open("/proc/self/ns/ipc", os.O_RDONLY),
+    ]
+    try:
+        user_fd, other_fds = runner._split_user_fd(fds)
+        assert user_fd == fds[1]
+        assert other_fds == [fds[0], fds[2]]
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def test_not_running_domain_raises_before_touching_the_container(monkeypatch):
+    move = Mock()
     lxc = Mock()
+    monkeypatch.setattr(runner, "_move_into_cgroup", move)
     monkeypatch.setattr(runner.libvirt_lxc, "lxcOpenNamespace", lxc)
-    monkeypatch.setattr(runner, "_move_into_cgroup", Mock())
 
     with pytest.raises(RuntimeError, match="not running"):
         runner.run_in_container(_dom(domain_id=-1), [], "", True, ["/bin/sh"])
 
+    # The bug being guarded: ID() == -1 fell through to _move_into_cgroup(-1),
+    # which opened /proc/-1/cgroup. Asserting only on lxcOpenNamespace would
+    # still pass with the check moved back below the cgroup join.
+    move.assert_not_called()
     lxc.assert_not_called()
 
 
@@ -43,17 +66,21 @@ def test_idmap_without_user_fd_raises_and_closes_all_fds(monkeypatch):
     enter.assert_not_called()
 
 
-def test_no_namespace_fds_raises(monkeypatch):
+def test_only_user_fd_returned_raises_and_closes_it(monkeypatch):
+    # A reachable shape: libvirt hands back a user-ns fd and nothing else, so
+    # _split_user_fd leaves other_fds empty and there is nothing to setns into.
+    closed: list[int] = []
     monkeypatch.setattr(runner, "_move_into_cgroup", Mock())
     monkeypatch.setattr(runner.libvirt_lxc, "lxcOpenNamespace", Mock(return_value=[5]))
-    monkeypatch.setattr(runner, "_split_user_fd", Mock(return_value=(-1, [])))
-    monkeypatch.setattr(runner.os, "close", Mock())
+    monkeypatch.setattr(runner, "_split_user_fd", Mock(return_value=(5, [])))
+    monkeypatch.setattr(runner.os, "close", closed.append)
     enter = Mock()
     monkeypatch.setattr(runner, "enter_and_exec", enter)
 
     with pytest.raises(RuntimeError, match="no container namespace"):
         runner.run_in_container(_dom(), [], "", False, ["/bin/sh"])
 
+    assert closed == [5]
     enter.assert_not_called()
 
 

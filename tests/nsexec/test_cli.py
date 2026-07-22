@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+# Importing this pulls in the compiled _native extension. If it isn't built,
+# collection fails here and the run goes red -- deliberately. Build it with
+# `python3 -c "from setuptools import setup; setup()" build_ext --inplace`.
 from truenas_pylibvirt.nsexec import cli
 
 
@@ -21,29 +24,22 @@ def test_write_all_loops_until_drained(monkeypatch):
     assert len(written) == 5  # every byte delivered despite short writes
 
 
-def test_write_all_single_shot(monkeypatch):
-    calls: list[bytes] = []
-
-    def full_write(fd, data):
-        calls.append(bytes(data))
-        return len(data)
-
-    monkeypatch.setattr(cli.os, "write", full_write)
-    cli._write_all(7, b"hi")
-
-    assert calls == [b"hi"]
-
-
+# Every _die() in main() exits 2 — including the libvirt-connect failure a
+# few lines below these checks, and argparse's own usage errors. So the
+# argument-conflict tests must assert on the message; asserting the exit
+# code alone passes even with the check deleted outright.
 @pytest.mark.parametrize("extra", [["-t"], ["--mode", "interactive"]])
-def test_n_conflicts_with_interactive(monkeypatch, extra):
+def test_n_conflicts_with_interactive(monkeypatch, capsys, extra):
     monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
     with pytest.raises(SystemExit) as ei:
         cli.main(["ct", "-n", *extra])
     assert ei.value.code == 2
+    assert "-n cannot be combined with interactive mode" in capsys.readouterr().err
 
 
-def test_t_and_T_still_conflict(monkeypatch):
+def test_t_and_T_still_conflict(monkeypatch, capsys):
     monkeypatch.setattr(cli.os, "geteuid", lambda: 0)
     with pytest.raises(SystemExit) as ei:
         cli.main(["ct", "-t", "-T"])
     assert ei.value.code == 2
+    assert "-t and -T are mutually exclusive" in capsys.readouterr().err

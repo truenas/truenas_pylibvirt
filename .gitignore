@@ -2,3 +2,6 @@
 .pybuild/
 *.egg-info/
 __pycache__
+# `build_ext --inplace` output (see .github/workflows/unit_tests.yml)
+build/
+*.so
