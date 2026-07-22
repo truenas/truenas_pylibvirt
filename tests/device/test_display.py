@@ -1,6 +1,8 @@
 """Tests for Display device XML generation."""
 from __future__ import annotations
 
+from unittest.mock import Mock, patch
+
 import pytest
 from xml.etree import ElementTree as ET
 
@@ -69,3 +71,47 @@ def test_display_identity(mock_device_delegate):
     # Display devices use bind:port for identity
     identity = device.identity()
     assert identity == "0.0.0.0:5912"
+
+
+def _display(mock_device_delegate, *, web, type_=DisplayDeviceType.SPICE):
+    return DisplayDevice(
+        type_=type_,
+        resolution="1024x768",
+        port=5912,
+        web_port=5913,
+        bind="0.0.0.0",
+        password="secret",
+        web=web,
+        wait=False,
+        device_delegate=mock_device_delegate,
+    )
+
+
+def test_run_starts_websockify_when_web_enabled(mock_device_delegate):
+    device = _display(mock_device_delegate, web=True)
+    with patch("truenas_pylibvirt.device.display.subprocess.Popen") as popen:
+        popen.return_value = Mock()
+        with device.run(Mock(), "uuid"):
+            pass
+    popen.assert_called_once()
+    argv = popen.call_args.args[0]
+    assert argv[0] == "websockify"
+    assert "0.0.0.0:5912" in argv  # server_addr (bind:port)
+    assert ":5913" in argv         # web_bind (:web_port)
+
+
+def test_run_skips_websockify_when_web_disabled(mock_device_delegate):
+    # Regression: web=False must not start the browser-facing proxy.
+    device = _display(mock_device_delegate, web=False)
+    with patch("truenas_pylibvirt.device.display.subprocess.Popen") as popen:
+        with device.run(Mock(), "uuid"):
+            pass
+    popen.assert_not_called()
+
+
+def test_run_skips_websockify_for_vnc(mock_device_delegate):
+    device = _display(mock_device_delegate, web=False, type_=DisplayDeviceType.VNC)
+    with patch("truenas_pylibvirt.device.display.subprocess.Popen") as popen:
+        with device.run(Mock(), "uuid"):
+            pass
+    popen.assert_not_called()
