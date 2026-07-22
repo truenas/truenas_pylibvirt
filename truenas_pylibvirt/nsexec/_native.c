@@ -1,10 +1,10 @@
 /*
  * Namespace + capability primitives used to open a shell inside a
  * libvirt-LXC container. The composite entry point `enter_and_exec` performs
- * setns on the non-user namespaces first, then setns(CLONE_NEWUSER) (so
- * capability bounding-set drops and the explicit effective+permitted set
- * applied afterwards are not clobbered), then applies caps, then forks so
- * the exec'd shell lands in the container's PID namespace.
+ * setns on the non-user namespaces first, then setns(CLONE_NEWUSER) (so the
+ * capability bounding-set drops applied afterwards are not clobbered), then
+ * drops caps, then forks so the exec'd shell lands in the container's PID
+ * namespace.
  *
  * Namespace fds are provided by the caller (typically via libvirt's
  * virDomainLxcOpenNamespace, exposed in Python as libvirt_lxc.lxcOpenNamespace)
@@ -12,7 +12,7 @@
  * ownership of the fds to this function, which closes them after setns.
  *
  * Linked against -lc (setns, prctl, fork, execv, waitpid) and -lcap
- * (cap_from_name, cap_from_text, cap_set_proc, cap_free).
+ * (cap_from_name, cap_to_name, cap_max_bits, cap_valid, cap_free).
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -189,28 +189,8 @@ py_cap_max_bits(PyObject *self, PyObject *args)
 }
 
 
-static PyObject *
-py_cap_set_proc_from_text(PyObject *self, PyObject *args)
-{
-    const char *text;
-    if (!PyArg_ParseTuple(args, "s", &text))
-        return NULL;
-    cap_t caps = cap_from_text(text);
-    if (caps == NULL)
-        return PyErr_SetFromErrno(PyExc_OSError);
-    int rc = cap_set_proc(caps);
-    int saved_errno = errno;
-    cap_free(caps);
-    if (rc != 0) {
-        errno = saved_errno;
-        return PyErr_SetFromErrno(PyExc_OSError);
-    }
-    Py_RETURN_NONE;
-}
-
-
 /*
- * enter_and_exec(user_fd, other_fds, drop_names, caps_text, argv) -> int
+ * enter_and_exec(user_fd, other_fds, drop_names, argv) -> int
  *
  *   user_fd      (int):         fd for the container's user namespace, or
  *                               -1 to skip the user-ns switch
@@ -221,9 +201,6 @@ py_cap_set_proc_from_text(PyObject *self, PyObject *args)
  *                               need to know which fd is which kind.
  *   drop_names   (list[str]):   libcap names (e.g. "cap_lease") to drop
  *                               from CapBnd
- *   caps_text    (str):         libcap spec
- *                               (e.g. "cap_net_admin,cap_net_raw+ep"),
- *                               or empty string to skip
  *   argv         (list[str]):   command to exec inside the container
  *                               (argv[0] is the path to execv)
  *
@@ -233,21 +210,19 @@ py_cap_set_proc_from_text(PyObject *self, PyObject *args)
  *
  * Returns the exit status of the exec'd process (parent side). Order of
  * operations is critical: setns(CLONE_NEWUSER) resets every capability set,
- * so drops + caps MUST be applied between the user-ns switch and the rest
- * of the setns calls.
+ * so the bounding-set drops MUST be applied between the user-ns switch and
+ * the rest of the setns calls.
  */
 static PyObject *
 py_enter_and_exec(PyObject *self, PyObject *args)
 {
     int user_fd = -1;
     PyObject *other_fds_list, *drop_names_list, *argv_list;
-    const char *caps_text;
 
-    if (!PyArg_ParseTuple(args, "iO!O!sO!",
+    if (!PyArg_ParseTuple(args, "iO!O!O!",
                           &user_fd,
                           &PyList_Type, &other_fds_list,
                           &PyList_Type, &drop_names_list,
-                          &caps_text,
                           &PyList_Type, &argv_list))
         return NULL;
 
@@ -364,22 +339,12 @@ py_enter_and_exec(PyObject *self, PyObject *args)
         }
     }
 
-    /* Apply effective+permitted set. Also inherited by the fork child. */
-    if (caps_text[0] != '\0') {
-        cap_t caps = cap_from_text(caps_text);
-        if (caps == NULL) {
-            set_oserror_with_context("cap_from_text");
-            goto err;
-        }
-        int rc = cap_set_proc(caps);
-        int saved = errno;
-        cap_free(caps);
-        if (rc != 0) {
-            errno = saved;
-            set_oserror_with_context("cap_set_proc");
-            goto err;
-        }
-    }
+    /* No effective/permitted narrowing here: the bounding-set drops above are
+     * the whole capability policy, matching liblxc's attach (drop_capabilities
+     * + no cap_set_proc). Narrowing the effective set before the fork would
+     * strip CAP_SETUID/CAP_SETGID and make the child's setresuid/setresgid(0)
+     * fail for idmapped containers; a root exec recomputes effective caps
+     * bounded by CapBnd anyway. */
 
     /* setns(CLONE_NEWPID) only affects children — fork so the exec'd shell
      * lands in the container's PID namespace. The child also handles the
@@ -521,18 +486,14 @@ static PyMethodDef NsexecMethods[] = {
      "cap_max_bits() -> int\n\n"
      "Return one past the highest capability number the running libcap /\n"
      "kernel recognises (reads /proc/sys/kernel/cap_last_cap)."},
-    {"cap_set_proc_from_text",  py_cap_set_proc_from_text,  METH_VARARGS,
-     "cap_set_proc_from_text(text: str) -> None\n\n"
-     "Parse a libcap text spec (e.g. 'cap_net_admin,cap_net_raw+ep') and\n"
-     "apply it as the calling thread's effective+permitted sets."},
     {"enter_and_exec",          py_enter_and_exec,          METH_VARARGS,
-     "enter_and_exec(user_fd, other_fds, drop_names, caps_text, argv) -> int\n\n"
+     "enter_and_exec(user_fd, other_fds, drop_names, argv) -> int\n\n"
      "Enter the container's namespaces using caller-supplied fds (see\n"
      "libvirt_lxc.lxcOpenNamespace). other_fds is a list[int]; each fd is\n"
      "handed to setns(fd, 0) in list order, then user_fd (if >= 0) last.\n"
-     "Cap drops and the explicit effective+permitted set are applied after\n"
-     "the user-ns switch, then fork+exec. Takes ownership of all provided\n"
-     "fds. Returns the exit status of the exec'd process."},
+     "Bounding-set drops are applied after the user-ns switch, then\n"
+     "fork+exec. Takes ownership of all provided fds. Returns the exit\n"
+     "status of the exec'd process."},
     {NULL, NULL, 0, NULL},
 };
 
