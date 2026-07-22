@@ -10,6 +10,7 @@ therefore unsafe to call from a multi-threaded daemon.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from typing import TYPE_CHECKING
 
@@ -87,10 +88,23 @@ def run_in_container(
     :returns: exit status of the in-container process (128+signo if
         terminated by signal)
     """
-    _move_into_cgroup(dom.ID())
+    init_pid = dom.ID()
+    if init_pid < 0:
+        raise RuntimeError(f"container {dom.name()!r} is not running")
+    _move_into_cgroup(init_pid)
 
     fds = libvirt_lxc.lxcOpenNamespace(dom, 0)
-    user_fd, other_fds = _split_user_fd(fds)
+    try:
+        user_fd, other_fds = _split_user_fd(fds)
+        if not other_fds:
+            raise RuntimeError("libvirt returned no container namespace fds")
+        if has_idmap and user_fd < 0:
+            raise RuntimeError("idmapped container is missing its user namespace fd")
+    except BaseException:
+        for fd in fds:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        raise
 
     # Privileged container (no idmap) — skip the user-ns setns so the
     # process keeps host credentials. Close the fd defensively if
