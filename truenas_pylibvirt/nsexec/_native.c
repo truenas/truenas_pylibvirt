@@ -465,9 +465,21 @@ py_enter_and_exec(PyObject *self, PyObject *args)
     PyMem_RawFree(drop_nums);
     PyMem_RawFree(other_fd);
 
+    /* Retry on EINTR, but run pending Python signal handlers between tries
+     * (mirrors CPython's os.waitpid): a handler that raises — e.g. the
+     * default SIGINT -> KeyboardInterrupt — must interrupt the wait rather
+     * than be swallowed by a blind retry. async_err distinguishes "handler
+     * raised" (propagate it) from "waitpid failed" (raise OSError). */
     int status;
-    if (waitpid(child, &status, 0) < 0)
-        return PyErr_SetFromErrno(PyExc_OSError);
+    pid_t waited;
+    int async_err = 0;
+    do {
+        Py_BEGIN_ALLOW_THREADS
+        waited = waitpid(child, &status, 0);
+        Py_END_ALLOW_THREADS
+    } while (waited < 0 && errno == EINTR && !(async_err = PyErr_CheckSignals()));
+    if (waited < 0)
+        return async_err ? NULL : PyErr_SetFromErrno(PyExc_OSError);
     if (WIFEXITED(status))
         return PyLong_FromLong(WEXITSTATUS(status));
     if (WIFSIGNALED(status))
