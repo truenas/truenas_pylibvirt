@@ -203,6 +203,12 @@ def _decide_interactive(args: argparse.Namespace) -> bool:
     return os.isatty(0) and os.isatty(1)
 
 
+def _write_all(fd: int, data: bytes) -> None:
+    """os.write may write fewer bytes than requested; loop until all are out."""
+    while data:
+        data = data[os.write(fd, data):]
+
+
 def _relay(stdin_fd: int, master_fd: int) -> None:
     """Ferry bytes between host stdin/stdout and the PTY master.
 
@@ -239,7 +245,7 @@ def _relay(stdin_fd: int, master_fd: int) -> None:
                 raise
             if not data:
                 return
-            os.write(1, data)
+            _write_all(1, data)
         if stdin_fd in ready:
             try:
                 data = os.read(stdin_fd, 4096)
@@ -254,7 +260,7 @@ def _relay(stdin_fd: int, master_fd: int) -> None:
                     os.write(master_fd, veof)
                 read_fds = [master_fd]
                 continue
-            os.write(master_fd, data)
+            _write_all(master_fd, data)
 
 
 def _run_interactive(
@@ -509,6 +515,8 @@ def main(argv: list[str] | None = None) -> None:
         _die("-t and -T are mutually exclusive")
     if args.mode != "auto" and (args.force_interactive or args.force_non_interactive):
         _die("--mode is mutually exclusive with -t/-T")
+    if args.disable_stdin and (args.force_interactive or args.mode == "interactive"):
+        _die("-n cannot be combined with interactive mode (-t / --mode interactive)")
 
     command = list(args.command)
     if command and command[0] == "--":
