@@ -84,7 +84,9 @@ class DisplayDevice(Device):
     @contextmanager
     def run(self, connection: Connection, domain_uuid: str) -> Generator[None, None, None]:
         process = None
-        if self.type_ == DisplayDeviceType.SPICE:
+        # web=False disables browser-based access, so the spice-html5 websockify
+        # proxy must not be started (validate_impl already forbids web for VNC).
+        if self.type_ == DisplayDeviceType.SPICE and self.web:
             web_bind = f":{self.web_port}" if self.bind == "0.0.0.0" else f"{self.bind}:{self.web_port}"
             server_addr = f"{self.bind}:{self.port}"
             process = subprocess.Popen(
