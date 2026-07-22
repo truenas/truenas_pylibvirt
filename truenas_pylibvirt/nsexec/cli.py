@@ -125,13 +125,11 @@ def _resolve_domain(conn: libvirt.virConnect, target: str) -> libvirt.virDomain:
     _die(f"no domain named or titled {target!r}")
 
 
-def _parse_caps_and_idmap(xml: str) -> tuple[list[str], str, bool]:
-    """Extract (drop_names, caps_text, has_idmap) from live ``XMLDesc()``.
+def _parse_caps_and_idmap(xml: str) -> tuple[list[str], bool]:
+    """Extract (drop_names, has_idmap) from live ``XMLDesc()``.
 
-    ``drop_names`` are full libcap names (``cap_<short>``), matching the
-    format :func:`enter_and_exec` expects. ``caps_text`` is the libcap
-    text spec for the explicit effective+permitted set (empty when no
-    caps are enabled by the policy).
+    ``drop_names`` are full libcap names (``cap_<short>``) to drop from the
+    bounding set, matching the format :func:`enter_and_exec` expects.
     """
     from . import derive_caps
 
@@ -147,11 +145,10 @@ def _parse_caps_and_idmap(xml: str) -> tuple[list[str], str, bool]:
     else:
         policy = "default"
         state = {}
-    short_drops, enabled = derive_caps(policy, state)
+    short_drops = derive_caps(policy, state)
     drop_names = [f"cap_{n}" for n in short_drops]
-    caps_text = f"{','.join('cap_' + n for n in enabled)}+ep" if enabled else ""
     has_idmap = root.find("./idmap") is not None
-    return drop_names, caps_text, has_idmap
+    return drop_names, has_idmap
 
 
 def _parse_env_overrides(items: list[str]) -> dict[str, str]:
@@ -266,7 +263,6 @@ def _relay(stdin_fd: int, master_fd: int) -> None:
 def _run_interactive(
     dom: libvirt.virDomain,
     drop_names: list[str],
-    caps_text: str,
     has_idmap: bool,
     argv: list[str],
 ) -> int:
@@ -306,7 +302,7 @@ def _run_interactive(
             os.dup2(slave, 2)
             os.close(master)
             os.close(slave)
-            status = run_in_container(dom, drop_names, caps_text, has_idmap, argv)
+            status = run_in_container(dom, drop_names, has_idmap, argv)
         except Exception as e:
             # After dup2, fd 2 is the PTY slave — the message reaches
             # the parent's relay and lands on the user's terminal.
@@ -354,7 +350,6 @@ def _run_interactive(
 def _run_non_interactive(
     dom: libvirt.virDomain,
     drop_names: list[str],
-    caps_text: str,
     has_idmap: bool,
     argv: list[str],
     disable_stdin: bool,
@@ -365,7 +360,7 @@ def _run_non_interactive(
         fd = os.open(os.devnull, os.O_RDONLY)
         os.dup2(fd, 0)
         os.close(fd)
-    return run_in_container(dom, drop_names, caps_text, has_idmap, argv)
+    return run_in_container(dom, drop_names, has_idmap, argv)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -540,7 +535,7 @@ def main(argv: list[str] | None = None) -> None:
     if not dom.isActive():
         _die(f"domain {args.target!r} is not running")
 
-    drop_names, caps_text, has_idmap = _parse_caps_and_idmap(dom.XMLDesc())
+    drop_names, has_idmap = _parse_caps_and_idmap(dom.XMLDesc())
 
     env = _build_environment(_parse_env_overrides(args.env))
     os.environ.clear()
@@ -549,10 +544,10 @@ def main(argv: list[str] | None = None) -> None:
     interactive = _decide_interactive(args)
 
     if interactive:
-        status = _run_interactive(dom, drop_names, caps_text, has_idmap, command)
+        status = _run_interactive(dom, drop_names, has_idmap, command)
     else:
         status = _run_non_interactive(
-            dom, drop_names, caps_text, has_idmap, command, args.disable_stdin
+            dom, drop_names, has_idmap, command, args.disable_stdin
         )
     sys.exit(status)
 

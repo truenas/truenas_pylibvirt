@@ -14,25 +14,25 @@ from truenas_pylibvirt.nsexec._native import enter_and_exec
 
 
 def test_exit_zero():
-    assert enter_and_exec(-1, [], [], "", ["/bin/true"]) == 0
+    assert enter_and_exec(-1, [], [], ["/bin/true"]) == 0
 
 
 def test_exit_nonzero():
-    assert enter_and_exec(-1, [], [], "", ["/bin/false"]) == 1
+    assert enter_and_exec(-1, [], [], ["/bin/false"]) == 1
 
 
 def test_command_not_found():
-    assert enter_and_exec(-1, [], [], "", ["/nonexistent-command-xyz"]) == 127
+    assert enter_and_exec(-1, [], [], ["/nonexistent-command-xyz"]) == 127
 
 
 def test_terminated_by_signal():
     # Child SIGKILLs itself -> 128 + 9.
-    assert enter_and_exec(-1, [], [], "", ["/bin/sh", "-c", "kill -9 $$"]) == 137
+    assert enter_and_exec(-1, [], [], ["/bin/sh", "-c", "kill -9 $$"]) == 137
 
 
 def test_empty_argv_rejected():
     with pytest.raises(ValueError, match="argv must not be empty"):
-        enter_and_exec(-1, [], [], "", [])
+        enter_and_exec(-1, [], [], [])
 
 
 def test_benign_signal_does_not_abort_wait():
@@ -52,7 +52,7 @@ def test_benign_signal_does_not_abort_wait():
     old = signal.signal(signal.SIGALRM, lambda _signum, _frame: fired.append(1))
     try:
         signal.setitimer(signal.ITIMER_REAL, 0.1)
-        assert enter_and_exec(-1, [], [], "", ["/bin/sh", "-c", "sleep 0.4; exit 7"]) == 7
+        assert enter_and_exec(-1, [], [], ["/bin/sh", "-c", "sleep 0.4; exit 7"]) == 7
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, old)

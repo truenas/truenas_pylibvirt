@@ -16,7 +16,11 @@ def test_too_few_args_exits(monkeypatch):
 
 
 def test_bad_idmap_flag_exits(monkeypatch):
-    monkeypatch.setattr(entry.sys, "argv", ["prog", "uri", "uuid", "drops", "caps", "yes"])
+    # 5-element wire; the idmap flag (position 4) is "yes", which is neither
+    # "0" nor "1". libvirt.open is left unmocked on purpose: if the validation
+    # were dropped, "yes" -> has_idmap=False and main() would fall through to a
+    # real libvirt.open() error instead of this SystemExit, failing the test.
+    monkeypatch.setattr(entry.sys, "argv", ["prog", "uri", "uuid", "drops", "yes"])
     with pytest.raises(SystemExit, match="idmap flag"):
         entry.main()
 
@@ -24,7 +28,7 @@ def test_bad_idmap_flag_exits(monkeypatch):
 def test_valid_args_forward_to_runner(monkeypatch):
     monkeypatch.setattr(
         entry.sys, "argv",
-        ["prog", "uri", "uu", "cap_a,cap_b", "cap_x+ep", "1", "/bin/sh", "-c", "id"],
+        ["prog", "uri", "uu", "cap_a,cap_b", "1", "/bin/sh", "-c", "id"],
     )
     dom = Mock()
     conn = Mock()
@@ -37,4 +41,4 @@ def test_valid_args_forward_to_runner(monkeypatch):
         entry.main()
 
     assert ei.value.code == 0
-    run.assert_called_once_with(dom, ["cap_a", "cap_b"], "cap_x+ep", True, ["/bin/sh", "-c", "id"])
+    run.assert_called_once_with(dom, ["cap_a", "cap_b"], True, ["/bin/sh", "-c", "id"])
