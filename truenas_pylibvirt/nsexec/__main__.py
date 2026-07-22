@@ -18,11 +18,15 @@ from ._runner import run_in_container
 
 
 def main() -> None:
-    uri = sys.argv[1]
-    uuid = sys.argv[2]
-    drop_csv = sys.argv[3]
-    caps_text = sys.argv[4]
-    has_idmap = sys.argv[5] == "1"
+    if len(sys.argv) < 6:
+        raise SystemExit(
+            "usage: python3 -m truenas_pylibvirt.nsexec "
+            "<uri> <uuid> <drop_csv> <caps_text> <0|1> [argv...]"
+        )
+    uri, uuid, drop_csv, caps_text, idmap_flag = sys.argv[1:6]
+    if idmap_flag not in ("0", "1"):
+        raise SystemExit(f"idmap flag must be '0' or '1', got {idmap_flag!r}")
+    has_idmap = idmap_flag == "1"
     argv = sys.argv[6:]
 
     conn = libvirt.open(uri)

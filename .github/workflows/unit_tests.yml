@@ -15,6 +15,12 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Build native extension
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends libcap-dev
+        python3 -c "from setuptools import setup; setup()" build_ext --inplace
+
     - name: Test
       run: |
         PYTHONPATH=. pytest-3 -v --tb=short tests/
