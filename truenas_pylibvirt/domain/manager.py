@@ -128,6 +128,10 @@ class DomainManager:
 
             raise
 
+    def reset(self, domain: BaseDomain) -> None:
+        libvirt_domain = self._libvirt_domain_for_stop(domain)
+        libvirt_domain.reset(0)
+
     def suspend(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         libvirt_domain.suspend()
