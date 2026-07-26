@@ -149,28 +149,56 @@ class Connection:
         }.get(event, VirDomainEvent.UNKNOWN)
 
     def _open(self) -> None:
-        # Close the connection being replaced so it isn't leaked.
+        # Tear down the connection being replaced so it isn't leaked.
         if self._connection is not None:
             old, self._connection = self._connection, None
             try:
-                old.close()
+                self._discard(old)
             except libvirt.libvirtError:
                 logger.debug("Discarding unusable libvirt connection for %s", self.uri, exc_info=True)
 
         connection = self.manager.open(self.uri)
 
-        connection.domainEventRegister(self._libvirt_event_callback, None)
-        connection.setKeepAlive(5, 3)
+        try:
+            connection.domainEventRegister(self._libvirt_event_callback, None)
+            connection.setKeepAlive(5, 3)
+        except libvirt.libvirtError:
+            # Nothing records this handle yet, so no later code path would tear it down.
+            try:
+                self._discard(connection)
+            except libvirt.libvirtError:
+                logger.debug("Failed to discard libvirt connection for %s after setup error", self.uri, exc_info=True)
+            raise
 
         self._connection = connection
 
     def _close(self) -> None:
+        # Deliberately not `self.connection`: the property would open a handle -- starting
+        # libvirtd along the way -- purely so that it could be closed again.
+        with self._connection_lock:
+            if self._connection is None:
+                return
+
+            old, self._connection = self._connection, None
+
         try:
-            self.connection.close()
+            self._discard(old)
         except libvirt.libvirtError as e:
             raise Error(f"Failed to close libvirt connection: {e}")
 
-        self._connection = None
+    def _discard(self, connection: Any) -> None:
+        # `domainEventRegister` makes libvirt hold a reference on the handle that only
+        # `domainEventDeregister` releases. Closing without deregistering first therefore leaves
+        # the connection open and its object alive for the life of the process, and the abandoned
+        # handle keeps dispatching domain events.
+        # Broad: a handle that cannot be deregistered still has to be closed, and libvirt
+        # raises `KeyError` rather than `libvirtError` for a callback it no longer knows about.
+        try:
+            connection.domainEventDeregister(self._libvirt_event_callback)
+        except Exception:
+            logger.debug("Failed to deregister libvirt domain events for %s", self.uri, exc_info=True)
+
+        connection.close()
 
     def _libvirt_event_callback(self, conn: Any, dom: Any, event: int, detail: int, opaque: Any) -> None:
         domain_event = DomainEvent(uuid=dom.name(), event=self.domain_event(event))
