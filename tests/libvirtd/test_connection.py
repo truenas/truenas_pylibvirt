@@ -7,8 +7,15 @@ value, so the probe must be caught and turned into a reconnect. Reconnects are
 serialized so concurrent callers don't open (and leak) multiple connections.
 
 Handles that are dropped -- replaced by a reconnect, abandoned because post-open
-setup failed, or closed outright -- must be deregistered as well as closed, since
-a registered event callback keeps the connection alive on its own.
+setup failed, or closed outright -- must be deregistered, since a registered event
+callback keeps the connection alive on its own. The handle being replaced is only
+deregistered: another thread may still be inside an RPC on it, and closing would
+free it underneath that thread.
+
+The registration id of the first callback on a fresh handle is genuinely `0`, so
+these mocks return `0` -- with a truthy id the suite cannot see the difference
+between `if callback_id is not None` and `if callback_id`, and the latter silently
+skips the deregister that the whole file exists to pin.
 """
 from __future__ import annotations
 
@@ -26,10 +33,11 @@ def _call_names(conn: Mock) -> list[str]:
     return [name for name, _, _ in conn.mock_calls]
 
 
-def _make_conn() -> Mock:
+def _make_conn(callback_id: int = 0) -> Mock:
     conn = Mock(name="libvirt_conn")
     conn.isAlive.return_value = True
     conn.listAllDomains.return_value = []
+    conn.domainEventRegisterAny.return_value = callback_id
     return conn
 
 
@@ -43,7 +51,9 @@ def test_first_access_opens_registers_and_keepalive():
 
     assert got is conn
     manager.open.assert_called_once_with("qemu:///system")
-    conn.domainEventRegister.assert_called_once()
+    conn.domainEventRegisterAny.assert_called_once_with(
+        None, libvirt.VIR_DOMAIN_EVENT_ID_LIFECYCLE, connection._libvirt_event_callback, None
+    )
     conn.setKeepAlive.assert_called_once_with(5, 3)
     conn.close.assert_not_called()  # nothing to replace on the first open
 
@@ -74,8 +84,8 @@ def test_dead_connection_reconnects_when_listalldomains_raises():
 
     assert connection.connection is conn_b
     assert manager.open.call_count == 2
-    conn_a.close.assert_called_once()  # dead connection dropped, not leaked
-    conn_b.domainEventRegister.assert_called_once()
+    conn_a.domainEventDeregisterAny.assert_called_once_with(0)  # dead connection released, not leaked
+    conn_b.domainEventRegisterAny.assert_called_once()
 
 
 def test_dead_connection_reconnects_when_isalive_raises():
@@ -90,7 +100,7 @@ def test_dead_connection_reconnects_when_isalive_raises():
 
     assert connection.connection is conn_b
     assert manager.open.call_count == 2
-    conn_a.close.assert_called_once()
+    conn_a.domainEventDeregisterAny.assert_called_once_with(0)
 
 
 def test_isalive_false_reconnects():
@@ -104,12 +114,12 @@ def test_isalive_false_reconnects():
     conn_a.isAlive.return_value = False
 
     assert connection.connection is conn_b
-    conn_a.close.assert_called_once()
+    conn_a.domainEventDeregisterAny.assert_called_once_with(0)
 
 
-def test_replaced_connection_is_deregistered_before_being_closed():
-    """Closing alone doesn't release a handle that still has an event callback
-    registered, so the reconnect path must deregister first."""
+def test_replaced_connection_is_deregistered_but_not_closed():
+    """Deregistering is what releases the handle; closing it would free it under any
+    thread still inside an RPC on it, since the property hands out the raw handle."""
     manager = Mock()
     conn_a, conn_b = _make_conn(), _make_conn()
     manager.open.side_effect = [conn_a, conn_b]
@@ -120,17 +130,32 @@ def test_replaced_connection_is_deregistered_before_being_closed():
     conn_a.isAlive.return_value = False
     assert connection.connection is conn_b
 
-    conn_a.domainEventDeregister.assert_called_once()
-    conn_a.close.assert_called_once()
-    names = _call_names(conn_a)
-    assert names.index("domainEventDeregister") < names.index("close")
+    conn_a.domainEventDeregisterAny.assert_called_once_with(0)
+    conn_a.close.assert_not_called()
 
 
-@pytest.mark.parametrize("error", [libvirt.libvirtError("client socket is closed"), KeyError("callback")])
-def test_replaced_connection_is_closed_even_when_deregistering_fails(error):
-    """Deregistering a handle whose socket is already gone fails, and libvirt raises
-    `KeyError` for a callback it no longer knows about. Neither may stop the close: a
-    handle that is deregistered but left open is the leak this is meant to prevent."""
+def test_registration_id_travels_with_its_own_handle():
+    """Each handle is deregistered with the id it was registered with, not with
+    whatever the current handle happens to hold."""
+    manager = Mock()
+    conn_a, conn_b = _make_conn(callback_id=0), _make_conn(callback_id=7)
+    manager.open.side_effect = [conn_a, conn_b]
+
+    connection = Connection(manager, "uri")
+    assert connection.connection is conn_a
+
+    conn_a.isAlive.return_value = False
+    assert connection.connection is conn_b
+
+    conn_a.domainEventDeregisterAny.assert_called_once_with(0)
+    connection._close()
+    conn_b.domainEventDeregisterAny.assert_called_once_with(7)
+
+
+@pytest.mark.parametrize("error", [libvirt.libvirtError("client socket is closed"), RuntimeError("dispatching")])
+def test_reconnect_proceeds_when_deregistering_the_replaced_handle_fails(error):
+    """Deregistering a handle whose socket is already gone fails. That must not abort
+    the reconnect, which is the only thing that restores a working connection."""
     manager = Mock()
     conn_a, conn_b = _make_conn(), _make_conn()
     manager.open.side_effect = [conn_a, conn_b]
@@ -138,31 +163,52 @@ def test_replaced_connection_is_closed_even_when_deregistering_fails(error):
     connection = Connection(manager, "uri")
     assert connection.connection is conn_a
 
-    conn_a.domainEventDeregister.side_effect = error
+    conn_a.domainEventDeregisterAny.side_effect = error
     conn_a.isAlive.return_value = False
 
     assert connection.connection is conn_b
-    conn_a.close.assert_called_once()
+
+
+def test_failed_reopen_leaves_no_handle_installed():
+    """A reconnect that cannot open must not leave the discarded handle installed,
+    or the next access would probe a handle that has already been given back."""
+    manager = Mock()
+    conn_a = _make_conn()
+    manager.open.side_effect = [conn_a, libvirt.libvirtError("connect failed")]
+
+    connection = Connection(manager, "uri")
+    assert connection.connection is conn_a
+
+    conn_a.isAlive.return_value = False
+
+    with pytest.raises(libvirt.libvirtError):
+        connection.connection
+
+    assert connection._connection is None
+    assert connection._callback_id is None
 
 
 def test_event_register_failure_discards_handle_and_propagates():
     manager = Mock()
     conn = _make_conn()
     manager.open.return_value = conn
-    conn.domainEventRegister.side_effect = libvirt.libvirtError("register failed")
+    conn.domainEventRegisterAny.side_effect = libvirt.libvirtError("register failed")
 
     connection = Connection(manager, "uri")
 
     with pytest.raises(libvirt.libvirtError) as exc:
         connection.connection
 
-    assert exc.value is conn.domainEventRegister.side_effect
-    conn.domainEventDeregister.assert_called_once()
+    assert exc.value is conn.domainEventRegisterAny.side_effect
+    # Registration never completed, so there is no id to give back -- only the handle.
+    conn.domainEventDeregisterAny.assert_not_called()
     conn.close.assert_called_once()
     assert connection._connection is None
 
 
 def test_keepalive_failure_discards_handle_and_propagates():
+    """Registration succeeded before keepalive failed, so this handle is pinned by its
+    callback and has to be deregistered as well as closed."""
     manager = Mock()
     conn = _make_conn()
     manager.open.return_value = conn
@@ -174,7 +220,27 @@ def test_keepalive_failure_discards_handle_and_propagates():
         connection.connection
 
     assert exc.value is conn.setKeepAlive.side_effect
-    conn.domainEventDeregister.assert_called_once()
+    conn.domainEventDeregisterAny.assert_called_once_with(0)
+    conn.close.assert_called_once()
+    names = _call_names(conn)
+    assert names.index("domainEventDeregisterAny") < names.index("close")
+    assert connection._connection is None
+
+
+def test_setup_failure_discards_the_handle_whatever_the_error_type():
+    """Registration pins the handle the moment it succeeds, so whether the handle has to
+    be given back depends on setup not having finished -- not on which exception says so."""
+    manager = Mock()
+    conn = _make_conn()
+    manager.open.return_value = conn
+    conn.setKeepAlive.side_effect = RuntimeError("binding changed under us")
+
+    connection = Connection(manager, "uri")
+
+    with pytest.raises(RuntimeError):
+        connection.connection
+
+    conn.domainEventDeregisterAny.assert_called_once_with(0)
     conn.close.assert_called_once()
     assert connection._connection is None
 
@@ -205,6 +271,8 @@ def test_close_of_unopened_connection_does_not_open_one():
 
 
 def test_close_deregisters_and_clears_the_handle():
+    """Explicit teardown has no other user to trip over, so it closes as well as
+    deregisters and the handle is gone by the time it returns."""
     manager = Mock()
     conn = _make_conn()
     manager.open.return_value = conn
@@ -214,9 +282,12 @@ def test_close_deregisters_and_clears_the_handle():
 
     connection._close()
 
-    conn.domainEventDeregister.assert_called_once()
+    conn.domainEventDeregisterAny.assert_called_once_with(0)
     conn.close.assert_called_once()
+    names = _call_names(conn)
+    assert names.index("domainEventDeregisterAny") < names.index("close")
     assert connection._connection is None
+    assert connection._callback_id is None
     manager.open.assert_called_once()  # never reopened just to be closed
 
 
@@ -250,7 +321,7 @@ def test_concurrent_close_closes_once():
     assert connection.connection is conn
 
     n = 8
-    barrier = threading.Barrier(n)
+    barrier = threading.Barrier(n, timeout=30)
 
     def worker() -> None:
         barrier.wait()
@@ -275,7 +346,7 @@ def test_concurrent_access_opens_once():
     connection = Connection(manager, "uri")
 
     n = 8
-    barrier = threading.Barrier(n)
+    barrier = threading.Barrier(n, timeout=30)
     results: list = []
     results_lock = threading.Lock()
 
