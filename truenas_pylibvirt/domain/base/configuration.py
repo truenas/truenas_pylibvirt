@@ -25,6 +25,15 @@ class BaseDomainConfiguration:
     shutdown_timeout: int
     devices: list[Device]
 
+    def __post_init__(self) -> None:
+        # `Time` is compared by identity against its members when the clock offset is
+        # generated, so a caller that leaves this as the equivalent string produces a domain
+        # that silently ignores the setting rather than failing. Callers build this dataclass
+        # by unpacking an untyped dict, which defeats the type checker, so normalise here.
+        # This is a safety net, not part of the API: the annotation stays `Time` on purpose,
+        # so a typed caller passing a string is still a type error.
+        self.time = Time(self.time)
+
     @property
     def cpuset_list(self) -> list[int]:
         return parse_numeric_set(self.cpuset or '')

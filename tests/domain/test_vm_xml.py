@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from truenas_pylibvirt.domain.base.configuration import Time
 from truenas_pylibvirt.domain.vm.xml import VmDomainXmlGenerator
 
 
@@ -19,9 +20,13 @@ def _generator(
     ensure_display_device: bool = False,
     devices: list | None = None,
     min_memory: int | None = None,
+    time: Time = Time.UTC,
 ) -> VmDomainXmlGenerator:
     config = Mock()
     config.arch_type = arch_type
+    # A `Mock` attribute never equals a `Time` member, so leaving this unset would make "utc"
+    # the answer no matter what the clock tests ask for.
+    config.time = time
     config.hide_from_msr = hide_from_msr
     config.hyperv_enlightenments = hyperv_enlightenments
     config.enable_secure_boot = enable_secure_boot
@@ -106,3 +111,17 @@ def test_tpm_model(arch_type, expected_model):
     tpm_elements = [d for d in gen._devices_xml_children() if d.tag == "tpm"]
     assert len(tpm_elements) == 1
     assert tpm_elements[0].attrib["model"] == expected_model
+
+
+@pytest.mark.parametrize("time,hyperv,expected_offset,expected_timers", [
+    (Time.LOCAL, False, "localtime", []),
+    (Time.LOCAL, True,  "localtime", ["hypervclock"]),
+    (Time.UTC,   False, "utc",       []),
+    (Time.UTC,   True,  "utc",       ["hypervclock"]),
+])
+def test_clock_xml(time, hyperv, expected_offset, expected_timers):
+    """Clock offset follows `time`; the hypervclock timer is a child and does not affect it."""
+    gen = _generator(time=time, hyperv_enlightenments=hyperv)
+    clock = gen._clock_xml()
+    assert clock.attrib["offset"] == expected_offset
+    assert [t.attrib["name"] for t in clock] == expected_timers
