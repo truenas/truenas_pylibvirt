@@ -38,6 +38,37 @@ def parse_libvirt_device_name(device_name: str) -> tuple[str, str] | None:
     return None
 
 
+def is_usb_hub(udev_device: UdevDevice) -> bool:
+    """
+    Whether a udev device is a USB hub, root hubs included.
+
+    A hub is never a passthrough candidate: a root hub is the bus itself, and handing a guest a
+    hub hands it everything plugged into that hub.
+    """
+    try:
+        device_class = udev_device.attributes.get('bDeviceClass')
+    except (AttributeError, UnicodeDecodeError):
+        return False
+
+    return bool(device_class) and device_class.decode('utf-8', errors='ignore') == '09'
+
+
+def libvirt_device_name(sys_name: str) -> str:
+    """
+    Build the libvirt device name of a USB device from its sysfs port path.
+
+    The port path is the physical socket the device is plugged into (e.g. "1-2", or "1-4.2" for a
+    device behind a hub) and stays the same across replugs and reboots, unlike the device number.
+
+    Args:
+        sys_name: Sysfs port path like "1-2" or "1-4.2"
+
+    Returns:
+        Libvirt device name (e.g., "usb_1_2" or "usb_1_4_2")
+    """
+    return f'usb_{sys_name.replace("-", "_").replace(".", "_")}'
+
+
 def get_usb_device_details(udev_device: UdevDevice) -> dict[str, Any]:
     """Extract USB device details from udev device."""
     data = get_usb_device_default_data()
@@ -105,30 +136,10 @@ def find_usb_device_by_libvirt_name(device_name: str) -> dict[str, Any]:
     Returns:
         Device details dict or dict with error
     """
-    # Parse the libvirt name to get bus and device numbers
-    parsed = parse_libvirt_device_name(device_name)
-    if not parsed:
-        return {
-            **get_usb_device_default_data(),
-            'error': f'Invalid device name format: {device_name}'
-        }
-
-    target_bus, target_devnum = parsed
-
-    # Convert to string format with leading zeros if needed
-    target_bus = target_bus.lstrip('0') or '0'
-
     context = Context()
-    # Look for USB devices matching the bus and device number
+    # Look for the USB device currently plugged into the port the name refers to
     for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
-        props = device.properties
-
-        # Get bus and device numbers
-        bus = props.get('BUSNUM', '').lstrip('0') or '0'
-        devnum = props.get('DEVNUM', '').lstrip('0') or '0'
-
-        # Check if this matches our target
-        if bus == target_bus and devnum == target_devnum:
+        if libvirt_device_name(device.sys_name) == device_name and not is_usb_hub(device):
             return get_usb_device_details(device)
 
     return {
@@ -156,6 +167,9 @@ def find_usb_device_by_ids(vendor_id: str, product_id: str) -> str | None:
     product_id = product_id.lower().replace('0x', '')
 
     for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
+        if is_usb_hub(device):
+            continue
+
         props = device.properties
 
         # Get device IDs (they're already without 0x prefix in pyudev)
@@ -163,10 +177,8 @@ def find_usb_device_by_ids(vendor_id: str, product_id: str) -> str | None:
         device_product = props.get('ID_MODEL_ID', '').lower()
 
         if device_vendor == vendor_id and device_product == product_id:
-            # Build libvirt device name from bus and device numbers
-            bus = props.get('BUSNUM', '').lstrip('0') or '0'
-            devnum = props.get('DEVNUM', '').lstrip('0') or '0'
-            return f"usb_{bus}_{devnum}"
+            # Build libvirt device name from the port the device is plugged into
+            return libvirt_device_name(device.sys_name)
 
     return None
 
@@ -182,19 +194,10 @@ def get_all_usb_devices() -> dict[str, dict[str, Any]]:
     context = Context()
 
     for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
-        # Skip root hubs (they have bDeviceClass=09)
-        try:
-            device_class = device.attributes.get('bDeviceClass')
-            if device_class and device_class.decode('utf-8', errors='ignore') == '09':
-                continue
-        except (AttributeError, UnicodeDecodeError):
-            pass
+        if is_usb_hub(device):
+            continue
 
-        props = device.properties
-        bus = props.get('BUSNUM', '').lstrip('0') or '0'
-
-        devnum = props.get('DEVNUM', '').lstrip('0') or '0'
-        device_name = f"usb_{bus}_{devnum}"
+        device_name = libvirt_device_name(device.sys_name)
 
         # Skip if already added (shouldn't happen but just in case)
         if device_name not in result:
