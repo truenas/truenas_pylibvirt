@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from xml.etree import ElementTree
 
+from ..error import DeviceNotFoundError
 from ..xml import xml_element
 from .base import Device, DeviceXmlContext
 from ..utils.usb import find_usb_device_by_libvirt_name, find_usb_device_by_ids
@@ -20,11 +21,7 @@ class USBDevice(Device):
     controller_type: str | None
 
     def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
-        usb_details = self.get_usb_details()
-        if usb_details is None:
-            return []
-
-        capability = usb_details['capability']
+        capability = self.resolve()['capability']
         children = [
             xml_element(
                 "source",
@@ -90,6 +87,34 @@ class USBDevice(Device):
     def identity_impl(self) -> str:
         return self.device or f"{self.product_id}--{self.vendor_id}"
 
+    def resolve(self) -> dict[str, Any]:
+        """
+        Live details of the configured USB device.
+
+        The bus and device numbers written into the domain XML are whatever the kernel has
+        assigned right now, so they are read here rather than taken from configuration. A device
+        that cannot be resolved raises: a domain that quietly starts without a passthrough device
+        it was configured with is indistinguishable, from every surface we expose, from one that
+        got it.
+        """
+        details = self.get_usb_details()
+        if details is None or details.get('error'):
+            raise DeviceNotFoundError(self.not_found_message())
+
+        return details
+
+    def not_found_message(self) -> str:
+        if self.device:
+            return (
+                f'No USB device is connected at {self.device}. Plug the device back into the same '
+                'port, or reconfigure this VM to use the port it is now plugged into.'
+            )
+
+        return (
+            f'No USB device with vendor ID {self.vendor_id} and product ID {self.product_id} is '
+            'connected to this system.'
+        )
+
     def get_usb_details(self) -> dict[str, Any] | None:
         if self.device:
             return find_usb_device_by_libvirt_name(self.device)
@@ -121,21 +146,10 @@ class USBDevice(Device):
             )
 
         usb_device_details = self.get_usb_details()
-        if self.device:
-            if not usb_device_details:
-                verrors.append(("device", f"No USB device found with name {self.device}"))
-            elif usb_device_details.get("error"):
-                verrors.append(("device", usb_device_details["error"]))
-        else:
-            if not usb_device_details:
-                verrors.append(
-                    (
-                        "usb",
-                        f"No USB device found with Vendor ID {self.vendor_id} and Product ID {self.product_id}"
-                    )
-                )
-            elif usb_device_details.get("error"):
-                verrors.append(("usb", usb_device_details["error"]))
+        if not usb_device_details or usb_device_details.get("error"):
+            # Same wording the start path uses, so what the user is told when configuring the
+            # device and what they are told when it fails to start cannot drift apart.
+            verrors.append(("device" if self.device else "usb", self.not_found_message()))
 
         return verrors
 

@@ -12,7 +12,7 @@ from .domain.vm.configuration import (  # noqa
     VmBootloader, VmCpuMode, VmDomainConfiguration,
 )
 from .domain.vm.domain import VmDomain  # noqa
-from .error import Error, DomainDoesNotExistError, is_no_domain_error  # noqa
+from .error import DeviceNotFoundError, Error, DomainDoesNotExistError, is_no_domain_error  # noqa
 from .libvirtd.connection import Connection  # noqa
 from .libvirtd.connection_manager import ConnectionManager  # noqa
 from .libvirtd.service_delegate import ServiceDelegate  # noqa
@@ -28,6 +28,7 @@ __all__ = [
     'BaseDomain',
     'DEFAULT_CONTAINERS_URI',
     'DEFAULT_VMS_URI',
+    'DeviceNotFoundError',
     'DiskStorageDevice',
     'DomainDoesNotExistError',
     'DomainManagers',
