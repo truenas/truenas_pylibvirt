@@ -1,10 +1,14 @@
 import libvirt
 
-__all__ = ["Error", "DomainDoesNotExistError", "GuestAgentError", "is_no_domain_error"]
+__all__ = ["Error", "DeviceNotFoundError", "DomainDoesNotExistError", "GuestAgentError", "is_no_domain_error"]
 
 
 class Error(Exception):
     pass
+
+
+class DeviceNotFoundError(Error):
+    """A device a domain is configured to pass through is not present on the host."""
 
 
 class DomainDoesNotExistError(Error):
