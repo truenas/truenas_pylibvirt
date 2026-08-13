@@ -4,7 +4,36 @@ from __future__ import annotations
 from unittest.mock import Mock, patch
 from xml.etree import ElementTree as ET
 
+import pytest
+
+from truenas_pylibvirt import DeviceNotFoundError
 from truenas_pylibvirt.device import USBDevice
+from truenas_pylibvirt.utils.usb import get_usb_device_default_data
+
+
+def _capability(vendor_id, product_id, bus='1', device='2'):
+    """What `find_usb_device_by_libvirt_name` returns for a device that is present.
+
+    Bus and device numbers are unpadded because that is what the lookup produces; a padded
+    fixture would assert against a shape production cannot emit.
+    """
+    details = get_usb_device_default_data()
+    details['capability'].update({
+        'vendor': 'Test vendor',
+        'vendor_id': vendor_id,
+        'product': 'Test product',
+        'product_id': product_id,
+        'bus': bus,
+        'device': device,
+    })
+    details['available'] = True
+    details['description'] = 'Test product by Test vendor'
+    return details
+
+
+def _not_found(device_name):
+    """What it returns for a name whose port holds nothing. Notably, never `None`."""
+    return {**get_usb_device_default_data(), 'error': f'USB device {device_name} not found'}
 
 
 def test_usb_device_exclusive():
@@ -15,16 +44,7 @@ def test_usb_device_exclusive():
 @patch('truenas_pylibvirt.device.usb.find_usb_device_by_libvirt_name')
 def test_usb_device_xml_generation_by_name(mock_find_usb, device_context, mock_device_delegate):
     """Test USB device XML generation using device name."""
-    # Mock USB device details
-    mock_find_usb.return_value = {
-        'capability': {
-            'vendor_id': '0x1234',
-            'product_id': '0x5678',
-            'bus': '001',
-            'device': '002',
-        },
-        'available': True,
-    }
+    mock_find_usb.return_value = _capability('0x1234', '0x5678')
 
     device = USBDevice(
         vendor_id=None,
@@ -48,17 +68,8 @@ def test_usb_device_xml_generation_by_name(mock_find_usb, device_context, mock_d
 @patch('truenas_pylibvirt.device.usb.find_usb_device_by_libvirt_name')
 def test_usb_device_xml_generation_by_ids(mock_find_by_name, mock_find_by_ids, device_context, mock_device_delegate):
     """Test USB device XML generation using vendor/product IDs."""
-    # Mock USB device discovery
     mock_find_by_ids.return_value = "usb_1_1"
-    mock_find_by_name.return_value = {
-        'capability': {
-            'vendor_id': '0x1234',
-            'product_id': '0x5678',
-            'bus': '001',
-            'device': '002',
-        },
-        'available': True,
-    }
+    mock_find_by_name.return_value = _capability('0x1234', '0x5678')
 
     device = USBDevice(
         vendor_id="0x1234",
@@ -107,15 +118,7 @@ def test_usb_identity_with_ids(mock_device_delegate):
 def test_usb_validation_device_and_ids_mutually_exclusive(mock_find_usb, mock_device_delegate):
     """Test that device and IDs cannot both be specified."""
     # Mock USB device discovery to avoid udev dependency
-    mock_find_usb.return_value = {
-        'capability': {
-            'vendor_id': '0x1234',
-            'product_id': '0x5678',
-            'bus': '001',
-            'device': '002',
-        },
-        'available': True,
-    }
+    mock_find_usb.return_value = _capability('0x1234', '0x5678')
 
     device = USBDevice(
         vendor_id="0x1234",
@@ -145,18 +148,6 @@ def test_usb_validation_missing_device_and_ids(mock_device_delegate):
     assert any("must be specified" in error[1] for error in errors)
 
 
-def _capability(vendor_id, product_id, bus='001', device='002'):
-    return {
-        'capability': {
-            'vendor_id': vendor_id,
-            'product_id': product_id,
-            'bus': bus,
-            'device': device,
-        },
-        'available': True,
-    }
-
-
 def _hostdev_bus(hostdev):
     address = hostdev.find("address[@type='usb']")
     return address.get('bus') if address is not None else None
@@ -175,7 +166,7 @@ def test_usb_two_devices_same_type_single_controller(
     mock_find_by_name.side_effect = lambda n: {
         'usb_1_2': _capability('0x80ee', '0x0021'),
         'usb_3_4': _capability('0x0718', '0x7722'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     first = USBDevice(
         vendor_id='0x80ee', product_id='0x0021', device=None,
@@ -213,7 +204,7 @@ def test_usb_two_devices_different_types_two_controllers(
     mock_find_by_name.side_effect = lambda n: {
         'usb_1_2': _capability('0x80ee', '0x0021'),
         'usb_3_4': _capability('0x0718', '0x7722'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     first = USBDevice(
         vendor_id='0x80ee', product_id='0x0021', device=None,
@@ -245,7 +236,7 @@ def test_usb_nec_xhci_no_controller_bus_zero(mock_find_usb, device_context, mock
     mock_find_usb.side_effect = lambda n: {
         'usb_1_2': _capability('0x80ee', '0x0021'),
         'usb_3_4': _capability('0x0718', '0x7722'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     first = USBDevice(
         vendor_id=None, product_id=None, device='usb_1_2',
@@ -287,7 +278,7 @@ def test_usb_mixed_nec_and_qemu_xhci_indices(mock_find_usb, device_context, mock
     mock_find_usb.side_effect = lambda n: {
         'usb_1_2': _capability('0x80ee', '0x0021'),
         'usb_3_4': _capability('0x0718', '0x7722'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     nec = USBDevice(
         vendor_id=None, product_id=None, device='usb_1_2',
@@ -329,14 +320,15 @@ def test_usb_port_attribute_omitted(mock_find_usb, device_context, mock_device_d
 
 
 @patch('truenas_pylibvirt.device.usb.find_usb_device_by_libvirt_name')
-def test_usb_unavailable_device_does_not_consume_controller_index(
+def test_usb_missing_device_raises_and_does_not_consume_controller_index(
     mock_find_usb, device_context, mock_device_delegate
 ):
-    """A device whose lookup fails returns nothing before touching the counters, so a later
-    device of the same type still gets the first controller index."""
+    """An empty port aborts the start rather than silently dropping the device, and it does so
+    before touching the counters, so a later device of the same type still gets the first
+    controller index."""
     mock_find_usb.side_effect = lambda n: {
         'usb_3_4': _capability('0x0718', '0x7722'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     phantom = USBDevice(
         vendor_id=None, product_id=None, device='usb_missing',
@@ -347,7 +339,8 @@ def test_usb_unavailable_device_does_not_consume_controller_index(
         controller_type='qemu-xhci', device_delegate=mock_device_delegate,
     )
 
-    assert phantom.xml(device_context) == []
+    with pytest.raises(DeviceNotFoundError, match='usb_missing'):
+        phantom.xml(device_context)
 
     real_elements = real.xml(device_context)
     controllers = [e for e in real_elements if e.tag == 'controller']
@@ -366,7 +359,7 @@ def test_usb_interleaved_types_reuse_existing_controller(
         'usb_1_2': _capability('0x80ee', '0x0021'),
         'usb_3_4': _capability('0x0718', '0x7722'),
         'usb_5_6': _capability('0x1d6b', '0x0003'),
-    }.get(n)
+    }.get(n) or _not_found(n)
 
     first_ehci = USBDevice(
         vendor_id=None, product_id=None, device='usb_1_2',
@@ -393,6 +386,46 @@ def test_usb_interleaved_types_reuse_existing_controller(
     assert [e for e in second_elements if e.tag == 'controller'] == []
     second_hostdev = next(e for e in second_elements if e.tag == 'hostdev')
     assert _hostdev_bus(second_hostdev) == first_controller.get('index')
+
+
+@patch('truenas_pylibvirt.device.usb.find_usb_device_by_ids')
+def test_usb_missing_ids_raise(mock_find_by_ids, device_context, mock_device_delegate):
+    """A device identified by ids that are not connected fails the start instead of being dropped.
+
+    Dropping it silently produced a VM that booted without hardware it was configured with, which
+    nothing we expose records: the row is still listed, and the domain XML never mentions it.
+    """
+    mock_find_by_ids.return_value = None
+
+    device = USBDevice(
+        vendor_id='0x0718', product_id='0x7722', device=None,
+        controller_type='qemu-xhci', device_delegate=mock_device_delegate,
+    )
+
+    with pytest.raises(DeviceNotFoundError, match='0x7722'):
+        device.xml(device_context)
+
+
+@patch('truenas_pylibvirt.device.usb.find_usb_device_by_libvirt_name')
+def test_usb_xml_serialises(mock_find_usb, device_context, mock_device_delegate):
+    """The generated elements survive serialisation.
+
+    A lookup that failed used to yield a capability full of `None`s, which builds an element tree
+    happily and only blows up here, far from anything naming USB.
+    """
+    mock_find_usb.return_value = _capability('0x80ee', '0x0021')
+
+    device = USBDevice(
+        vendor_id=None, product_id=None, device='usb_1_2',
+        controller_type='qemu-xhci', device_delegate=mock_device_delegate,
+    )
+
+    hostdev = next(e for e in device.xml(device_context) if e.tag == 'hostdev')
+    serialised = ET.tostring(hostdev, encoding='unicode')
+
+    assert 'id="0x80ee"' in serialised
+    assert 'id="0x0021"' in serialised
+    assert 'bus="1" device="2"' in serialised
 
 
 def test_usb_conflict_detection(mock_device_delegate):
