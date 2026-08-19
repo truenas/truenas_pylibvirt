@@ -8,7 +8,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from .. import runtime
-from ..error import Error, DomainDoesNotExistError, is_no_domain_error
+from ..error import Error, DomainDoesNotExistError, is_no_domain_error, libvirt_errors_as_error
 from ..libvirtd.connection import Connection, DomainEvent, DomainState, VirDomainEvent
 from .base.domain import BaseDomain
 from .start_validator import StartValidator, StartValidationContext
@@ -41,6 +41,7 @@ class DomainManager:
 
         self.connection.register_domain_event_callback(self._domain_event_callback)
 
+    @libvirt_errors_as_error
     def start(self, domain: BaseDomain) -> None:
         with self.started_domains_lock:
             if started_domain := self.started_domains.get(domain.configuration.uuid):
@@ -96,6 +97,7 @@ class DomainManager:
                 else:
                     started_domain.cleanup()
 
+    @libvirt_errors_as_error
     def shutdown(self, domain: BaseDomain, shutdown_timeout: int | None = None) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
 
@@ -112,6 +114,7 @@ class DomainManager:
             shutdown_timeout -= 1
             time.sleep(1)
 
+    @libvirt_errors_as_error
     def destroy(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         self._destroy(libvirt_domain)
@@ -128,14 +131,17 @@ class DomainManager:
 
             raise
 
+    @libvirt_errors_as_error
     def reset(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         libvirt_domain.reset(0)
 
+    @libvirt_errors_as_error
     def suspend(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain_for_stop(domain)
         libvirt_domain.suspend()
 
+    @libvirt_errors_as_error
     def resume(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain(domain)
 
@@ -144,6 +150,7 @@ class DomainManager:
 
         libvirt_domain.resume()
 
+    @libvirt_errors_as_error
     def delete(self, domain: BaseDomain) -> None:
         libvirt_domain = self._libvirt_domain(domain)
         if self.connection.domain_state(libvirt_domain) in [DomainState.RUNNING, DomainState.PAUSED]:
