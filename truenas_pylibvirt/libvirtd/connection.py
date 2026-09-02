@@ -68,7 +68,8 @@ class Connection:
     def __init__(self, manager: ConnectionManager, uri: str):
         self.manager = manager
         self.uri = uri
-        self._connection = None
+        self._connection: Any = None
+        self._callback_id: int | None = None
         self._connection_lock = threading.Lock()
         self._domain_event_callbacks: list[DomainEventCallback] = []
 
@@ -149,28 +150,75 @@ class Connection:
         }.get(event, VirDomainEvent.UNKNOWN)
 
     def _open(self) -> None:
-        # Close the connection being replaced so it isn't leaked.
+        # Release the connection being replaced so it isn't leaked, but do not close it:
+        # `connection` hands out the raw handle and drops the lock before its caller makes
+        # an RPC, so another thread can still be inside a call on this one. Closing frees
+        # the connection regardless of who is mid-call, taking it out from under that
+        # thread. Deregistering releases the reference that would otherwise outlive us, so
+        # the handle is disposed once its last user lets go of it.
         if self._connection is not None:
-            old, self._connection = self._connection, None
-            try:
-                old.close()
-            except libvirt.libvirtError:
-                logger.debug("Discarding unusable libvirt connection for %s", self.uri, exc_info=True)
+            old, old_callback_id = self._connection, self._callback_id
+            self._connection, self._callback_id = None, None
+            self._discard(old, old_callback_id, close=False)
 
+        # A libvirtd that accepts the connection but never completes the handshake blocks
+        # here for as long as it stays wedged, with `_connection_lock` held.
         connection = self.manager.open(self.uri)
 
-        connection.domainEventRegister(self._libvirt_event_callback, None)
-        connection.setKeepAlive(5, 3)
+        callback_id: int | None = None
+        try:
+            callback_id = connection.domainEventRegisterAny(
+                None, libvirt.VIR_DOMAIN_EVENT_ID_LIFECYCLE, self._libvirt_event_callback, None
+            )
+            connection.setKeepAlive(5, 3)
+        except Exception:
+            # Nothing records this handle yet, so no later code path would tear it down, and
+            # no other thread can be using it either -- so unlike the reconnect path above it
+            # is safe (and necessary) to close it here. Broad, because what this has to catch
+            # is "setup did not finish", not one library's idea of how it failed: registration
+            # can already have pinned the handle by the time the failure happens.
+            try:
+                self._discard(connection, callback_id)
+            except libvirt.libvirtError:
+                logger.debug("Failed to discard libvirt connection for %s after setup error", self.uri, exc_info=True)
+            raise
 
         self._connection = connection
+        self._callback_id = callback_id
 
     def _close(self) -> None:
+        # Deliberately not `self.connection`: the property would open a handle -- starting
+        # libvirtd along the way -- purely so that it could be closed again.
+        with self._connection_lock:
+            if self._connection is None:
+                return
+
+            old, callback_id = self._connection, self._callback_id
+            self._connection, self._callback_id = None, None
+
         try:
-            self.connection.close()
+            self._discard(old, callback_id)
         except libvirt.libvirtError as e:
             raise Error(f"Failed to close libvirt connection: {e}")
 
-        self._connection = None
+    def _discard(self, connection: Any, callback_id: int | None, close: bool = True) -> None:
+        # Registering an event callback makes libvirt hold a reference on the handle that only
+        # deregistering releases, so a handle that is closed but not deregistered stays open --
+        # and keeps dispatching domain events -- for the life of the process. Deregistering is
+        # what actually lets the handle go, which is why the reconnect path can rely on it alone.
+        #
+        # It is best-effort: the RPC fails once the socket is gone, but libvirt releases the
+        # callback locally before sending it, so the reference is dropped either way. Broad,
+        # because nothing raised while giving the callback back may stop the handle being
+        # released -- which on the reconnect path is all that happens here.
+        if callback_id is not None:
+            try:
+                connection.domainEventDeregisterAny(callback_id)
+            except Exception:
+                logger.debug("Failed to deregister libvirt domain events for %s", self.uri)
+
+        if close:
+            connection.close()
 
     def _libvirt_event_callback(self, conn: Any, dom: Any, event: int, detail: int, opaque: Any) -> None:
         domain_event = DomainEvent(uuid=dom.name(), event=self.domain_event(event))
