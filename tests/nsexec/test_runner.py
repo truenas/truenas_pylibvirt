@@ -41,7 +41,7 @@ def test_not_running_domain_raises_before_touching_the_container(monkeypatch):
     monkeypatch.setattr(runner.libvirt_lxc, "lxcOpenNamespace", lxc)
 
     with pytest.raises(RuntimeError, match="not running"):
-        runner.run_in_container(_dom(domain_id=-1), [], "", True, ["/bin/sh"])
+        runner.run_in_container(_dom(domain_id=-1), [], True, ["/bin/sh"])
 
     # The bug being guarded: ID() == -1 fell through to _move_into_cgroup(-1),
     # which opened /proc/-1/cgroup. Asserting only on lxcOpenNamespace would
@@ -60,7 +60,7 @@ def test_idmap_without_user_fd_raises_and_closes_all_fds(monkeypatch):
     monkeypatch.setattr(runner, "enter_and_exec", enter)
 
     with pytest.raises(RuntimeError, match="user namespace"):
-        runner.run_in_container(_dom(), [], "", True, ["/bin/sh"])
+        runner.run_in_container(_dom(), [], True, ["/bin/sh"])
 
     assert sorted(closed) == [7, 8, 9]  # every fd libvirt returned is closed
     enter.assert_not_called()
@@ -78,7 +78,7 @@ def test_only_user_fd_returned_raises_and_closes_it(monkeypatch):
     monkeypatch.setattr(runner, "enter_and_exec", enter)
 
     with pytest.raises(RuntimeError, match="no container namespace"):
-        runner.run_in_container(_dom(), [], "", False, ["/bin/sh"])
+        runner.run_in_container(_dom(), [], False, ["/bin/sh"])
 
     assert closed == [5]
     enter.assert_not_called()
@@ -91,10 +91,10 @@ def test_happy_path_idmap_forwards_fds(monkeypatch):
     enter = Mock(return_value=42)
     monkeypatch.setattr(runner, "enter_and_exec", enter)
 
-    rc = runner.run_in_container(_dom(), ["cap_lease"], "cap_net_admin+ep", True, ["/bin/sh"])
+    rc = runner.run_in_container(_dom(), ["cap_lease"], True, ["/bin/sh"])
 
     assert rc == 42
-    enter.assert_called_once_with(3, [4, 5], ["cap_lease"], "cap_net_admin+ep", ["/bin/sh"])
+    enter.assert_called_once_with(3, [4, 5], ["cap_lease"], ["/bin/sh"])
 
 
 def test_privileged_closes_stray_user_fd(monkeypatch):
@@ -106,7 +106,7 @@ def test_privileged_closes_stray_user_fd(monkeypatch):
     enter = Mock(return_value=0)
     monkeypatch.setattr(runner, "enter_and_exec", enter)
 
-    runner.run_in_container(_dom(), [], "", False, ["/bin/sh"])  # has_idmap=False
+    runner.run_in_container(_dom(), [], False, ["/bin/sh"])  # has_idmap=False
 
     assert closed == [3]  # stray user-ns fd dropped for a privileged container
-    enter.assert_called_once_with(-1, [4, 5], [], "", ["/bin/sh"])
+    enter.assert_called_once_with(-1, [4, 5], [], ["/bin/sh"])
