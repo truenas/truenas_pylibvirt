@@ -7,12 +7,14 @@ from xml.etree import ElementTree as ET
 from truenas_pylibvirt.device import DiskStorageDevice, RawStorageDevice, StorageDeviceType, StorageDeviceIoType
 
 
-@pytest.mark.parametrize("path,type_,io_type,serial,expected_xml", [
+@pytest.mark.parametrize("path,type_,io_type,serial,logical,physical,expected_xml", [
     (
         "/dev/zvol/pool/boot_1",
         StorageDeviceType.AHCI,
         StorageDeviceIoType.THREADS,
         "test-serial",
+        None,
+        None,
         '<disk type="block" device="disk">'
         '<driver type="raw" cache="none" discard="unmap" io="threads" />'
         '<source dev="/dev/zvol/pool/boot_1" />'
@@ -21,14 +23,33 @@ from truenas_pylibvirt.device import DiskStorageDevice, RawStorageDevice, Storag
         '<serial>test-serial</serial>'
         '</disk>'
     ),
+    (
+        "/dev/zvol/pool/boot_1",
+        StorageDeviceType.VIRTIO,
+        StorageDeviceIoType.THREADS,
+        "test-serial",
+        4096,
+        4096,
+        '<disk type="block" device="disk">'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
+        '<source dev="/dev/zvol/pool/boot_1" />'
+        '<target bus="virtio" dev="vda" />'
+        '<boot order="1" />'
+        '<serial>test-serial</serial>'
+        '<blockio logical_block_size="4096" physical_block_size="4096" />'
+        '</disk>'
+    ),
 ])
-def test_disk_xml_generation(path, type_, io_type, serial, expected_xml, device_context, mock_device_delegate):
+def test_disk_xml_generation(
+    path, type_, io_type, serial, logical, physical, expected_xml,
+    device_context, mock_device_delegate
+):
     """Test Disk storage device XML generation."""
     device = DiskStorageDevice(
         type_=type_,
         path=path,
-        logical_sectorsize=None,
-        physical_sectorsize=None,
+        logical_sectorsize=logical,
+        physical_sectorsize=physical,
         iotype=io_type,
         serial=serial,
         device_delegate=mock_device_delegate
@@ -69,7 +90,39 @@ def test_disk_xml_generation(path, type_, io_type, serial, expected_xml, device_
         '<target bus="sata" dev="sda" />'
         '<boot order="1" />'
         '<serial>test-serial</serial>'
-        '<blockio physical_block_size="512" />'
+        '<blockio logical_block_size="512" physical_block_size="512" />'
+        '</disk>'
+    ),
+    (
+        "/mnt/tank/somefile",
+        StorageDeviceType.AHCI,
+        StorageDeviceIoType.THREADS,
+        "test-serial",
+        4096,
+        4096,
+        '<disk type="file" device="disk">'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
+        '<source file="/mnt/tank/somefile" />'
+        '<target bus="sata" dev="sda" />'
+        '<boot order="1" />'
+        '<serial>test-serial</serial>'
+        '<blockio logical_block_size="4096" physical_block_size="4096" />'
+        '</disk>'
+    ),
+    (
+        "/mnt/tank/somefile",
+        StorageDeviceType.AHCI,
+        StorageDeviceIoType.THREADS,
+        "test-serial",
+        4096,
+        None,
+        '<disk type="file" device="disk">'
+        '<driver type="raw" cache="none" discard="unmap" io="threads" />'
+        '<source file="/mnt/tank/somefile" />'
+        '<target bus="sata" dev="sda" />'
+        '<boot order="1" />'
+        '<serial>test-serial</serial>'
+        '<blockio logical_block_size="4096" />'
         '</disk>'
     ),
 ])
