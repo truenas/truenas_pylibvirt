@@ -52,17 +52,16 @@ class BaseStorageDevice(Device):
         if self.serial:
             children.append(xml_element("serial", text=self.serial))
 
+        # libvirt only forwards the attributes given here and QEMU defaults
+        # logical_block_size to 512 when it is absent. Dropping it turns a
+        # 4096 byte disk into 512e and a guest partitioned at 4096 bytes can
+        # no longer find its GPT header. Always emit the logical size and
+        # layer the physical size on top of it.
         if self.logical_sectorsize:
+            attributes = {"logical_block_size": str(self.logical_sectorsize)}
             if self.physical_sectorsize:
-                children.append(xml_element(
-                    "blockio",
-                    attributes={"physical_block_size": str(self.physical_sectorsize)}
-                ))
-            else:
-                children.append(xml_element(
-                    "blockio",
-                    attributes={"logical_block_size": str(self.logical_sectorsize)}
-                ))
+                attributes["physical_block_size"] = str(self.physical_sectorsize)
+            children.append(xml_element("blockio", attributes=attributes))
 
         return [
             xml_element(
