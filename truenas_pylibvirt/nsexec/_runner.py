@@ -67,7 +67,6 @@ def _split_user_fd(fds: list[int]) -> tuple[int, list[int]]:
 def run_in_container(
     dom: "libvirt.virDomain",
     drop_names: list[str],
-    caps_text: str,
     has_idmap: bool,
     argv: list[str],
 ) -> int:
@@ -75,13 +74,11 @@ def run_in_container(
 
     Sequence: cgroup join (host-side) -> open ns fds via libvirt ->
     classify user vs non-user fd -> hand to :func:`enter_and_exec`,
-    which performs the setns + cap drop + cap set + fork + execv dance.
+    which performs the setns + cap drop + fork + execv dance.
 
     :param dom: running libvirt-LXC domain object
     :param drop_names: libcap names (e.g. ``"cap_lease"``) to drop from
         the bounding set after the user-ns switch
-    :param caps_text: libcap text spec applied as the effective+permitted
-        set after the user-ns switch, or empty string to skip
     :param has_idmap: whether the container uses a user namespace
         (controls the user-ns setns and the in-child setresuid(0))
     :param argv: command to exec; argv[0] is the path
@@ -113,4 +110,4 @@ def run_in_container(
         os.close(user_fd)
         user_fd = -1
 
-    return enter_and_exec(user_fd, other_fds, drop_names, caps_text, argv)
+    return enter_and_exec(user_fd, other_fds, drop_names, argv)
