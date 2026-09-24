@@ -54,6 +54,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+# A worker thread dying is reported as a warning, so a test that only asserts on the
+# main thread passes green while most of its workers never ran.
+filterwarnings = ["error::pytest.PytestUnhandledThreadExceptionWarning"]
 
 [tool.mypy]
 strict = true
