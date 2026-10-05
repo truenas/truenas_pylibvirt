@@ -396,9 +396,10 @@ def test_circular_bridge_reference():
 
         mock_get_devices.side_effect = circular_devices_wrapper
 
-        with patch('truenas_pylibvirt.utils.iommu.get_pci_device_class') as mock_get_class:
-            mock_get_class.return_value = '0x060400'  # All are bridges
+        # All are bridges. Pass the caches explicitly, otherwise the device classes
+        # are read from the real /sys/bus/pci/devices of whatever host runs the test.
+        device_to_class = {'0000:00:01.0': 0x060400, '0000:01:00.0': 0x060400}
 
-            # This should not hang or crash
-            result = is_pci_bridge_critical('0000:00:01.0')
-            assert result is False  # Should handle gracefully
+        # This should not hang or crash
+        result = is_pci_bridge_critical('0000:00:01.0', device_to_class, {})
+        assert result is False  # Should handle gracefully
