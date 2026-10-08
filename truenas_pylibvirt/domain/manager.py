@@ -91,6 +91,13 @@ class DomainManager:
                     raise Error(f"Failed to create domain {domain.configuration.name!r}")
 
                 created = True
+
+                try:
+                    domain.post_start(libvirtd_domain)
+                except Exception:
+                    logger.warning(
+                        "Post-start setup failed for domain %r", domain.configuration.name, exc_info=True
+                    )
             finally:
                 if created:
                     self.started_domains[domain.configuration.uuid] = started_domain
