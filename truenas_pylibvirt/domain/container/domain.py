@@ -5,9 +5,13 @@ from dataclasses import dataclass
 import os
 import pathlib
 from typing import Any, Generator
+from xml.etree import ElementTree
 
 import truenas_os
 from truenas_os_pyutils.namespace import idmap_userns
+from truenas_pynetif.address.get_links import get_link
+from truenas_pynetif.address.link import set_link_mtu
+from truenas_pynetif.address.netlink import netlink_route
 
 from ... import runtime
 from ...error import Error
@@ -93,6 +97,32 @@ class ContainerDomain(BaseDomain):
                 # raise -- otherwise it would mask a more interesting
                 # upstream error and prevent siblings' cleanup.
                 runtime.umount_and_rmdir(idmapped_root)
+
+    def post_start(self, libvirt_domain: Any) -> None:
+        # A container NIC on a bridge is a pair of linked interfaces. One end goes into the
+        # container. The other end stays on TrueNAS and joins the bridge.
+        #
+        # libvirt does not set an MTU on either end, so both start at the kernel default of 1500.
+        # For a VM, libvirt copies the bridge MTU to the interface it adds to the bridge. The
+        # libvirt container driver is missing that step and also ignores <mtu> in the interface
+        # XML. This is a gap in upstream libvirt, so we close it here.
+        #
+        # Without this, the kernel drops frames larger than 1500 going to or from the container,
+        # even when the bridge allows more. This must run after start because libvirt creates
+        # the pair while it starts the container. The end inside the container is left alone.
+        # Its MTU is set from inside the container, the same as for a VM.
+        root = ElementTree.fromstring(libvirt_domain.XMLDesc())
+        with netlink_route() as sock:
+            for interface in root.iterfind("devices/interface[@type='bridge']"):
+                source = interface.find("source[@bridge]")
+                target = interface.find("target[@dev]")
+                if source is None or target is None:
+                    continue
+
+                mtu = get_link(sock, source.attrib["bridge"]).mtu
+                veth = get_link(sock, target.attrib["dev"])
+                if veth.mtu != mtu:
+                    set_link_mtu(sock, mtu, index=veth.index)
 
     def pid(self) -> int | None:
         pid_path = f"/var/run/libvirt/lxc/{self.configuration.uuid}.pid"

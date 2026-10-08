@@ -25,6 +25,9 @@ class BaseDomain:
     def run(self) -> Generator[Any, None, None]:
         yield
 
+    def post_start(self, libvirt_domain: Any) -> None:
+        pass
+
     def pid(self) -> int | None:
         raise NotImplementedError
 
