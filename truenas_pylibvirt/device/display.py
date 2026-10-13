@@ -33,8 +33,6 @@ class DisplayDevice(Device):
     web: bool = True
 
     def xml(self, context: DeviceXmlContext) -> list[ElementTree.Element]:
-        # FIXME: Resolution is not respected when we have more then 1 display device as we are not able to bind
-        #  video element to a graphic element
         return [
             xml_element(
                 "graphics",
@@ -55,30 +53,6 @@ class DisplayDevice(Device):
                 "input",
                 attributes={"type": "tablet", "bus": "usb"}
             ),
-            xml_element(
-                "video",
-                children=[
-                    xml_element(
-                        "model",
-                        attributes={
-                            "type": "qxl",
-                            # We have seen that on higher resolutions, the default values libvirt sets
-                            # for `vgamem/ram/vram` might not be sufficient and keeping that in mind,
-                            # changes have been added to have reasonable defaults for these attrs so
-                            # we support all the resolutions out of the box.
-                            "vgamem": str(64 * 1024),
-                            "ram": str(128 * 1024),
-                            "vram": str(64 * 1024),
-                        },
-                        children=[
-                            xml_element(
-                                "resolution",
-                                attributes={"x": self.resolution.split("x")[0], "y": self.resolution.split("x")[-1]},
-                            )
-                        ],
-                    ),
-                ],
-            )
         ]
 
     @contextmanager
