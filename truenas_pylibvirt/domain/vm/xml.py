@@ -7,7 +7,7 @@ from xml.etree import ElementTree
 from ...device.display import DisplayDevice, DisplayDeviceType
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
-from .configuration import VmBootloader, VmCpuMode
+from .configuration import VmBootloader, VmCpuMode, VmVideoModel
 from ...utils.cpu import get_cpu_model_choices
 from ...utils.ovmf import get_ovmf_vars_file
 
@@ -149,22 +149,35 @@ class VmDomainXmlGenerator(BaseDomainXmlGenerator):
 
         return []
 
+    def _video_xml(self, resolution: str | None) -> ElementTree.Element:
+        model = self.domain.configuration.video_model
+        attributes = {"type": model.value.lower()}
+        if model == VmVideoModel.QXL:
+            # libvirt's default QXL memory is too small for high resolutions.
+            attributes.update({"vgamem": str(64 * 1024), "ram": str(128 * 1024), "vram": str(64 * 1024)})
+        children: list[ElementTree.Element] = []
+        if resolution:
+            x, y = resolution.split("x")
+            children.append(xml_element("resolution", attributes={"x": x, "y": y}))
+        return xml_element("video", children=[xml_element("model", attributes=attributes, children=children)])
+
     def _devices_xml_children(self) -> list[ElementTree.Element]:
         children = super()._devices_xml_children()
 
-        display_device_available = False
+        first_display: DisplayDevice | None = None
         spice_server_available = False
         for device in self.domain.configuration.devices:
             if isinstance(device, DisplayDevice):
-                display_device_available = True
+                if first_display is None:
+                    first_display = device
                 if device.type_ == DisplayDeviceType.SPICE:
                     spice_server_available = True
                     break
 
-        if self.domain.configuration.ensure_display_device and not display_device_available:
-            # We should add a video device if there is no display device configured because most by
-            # default if not all headless servers like ubuntu etc require it to boot
-            children.append(xml_element("video"))
+        if first_display is not None or self.domain.configuration.ensure_display_device:
+            # Headless guests need a video device to boot, and libvirt cannot bind a <video> to a <graphics>,
+            # so one device serves every display.
+            children.append(self._video_xml(first_display.resolution if first_display else None))
 
         if spice_server_available:
             # We always add spicevmc channel device when a spice display device is available to allow users

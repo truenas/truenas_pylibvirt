@@ -24,11 +24,6 @@ from truenas_pylibvirt.device import DisplayDevice, DisplayDeviceType
         '</graphics>'
         '<controller type="usb" model="nec-xhci" />'
         '<input type="tablet" bus="usb" />'
-        '<video>'
-        '<model type="qxl" vgamem="65536" ram="131072" vram="65536">'
-        '<resolution x="1024" y="768" />'
-        '</model>'
-        '</video>'
     ),
 ])
 def test_display_xml_generation(

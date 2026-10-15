@@ -9,7 +9,7 @@ from .domain.container.configuration import (  # noqa
 from .domain.container.domain import ContainerDomain  # noqa
 from .domain.managers import DEFAULT_CONTAINERS_URI, DEFAULT_VMS_URI, DomainManagers  # noqa
 from .domain.vm.configuration import (  # noqa
-    VmBootloader, VmCpuMode, VmDomainConfiguration,
+    VmBootloader, VmCpuMode, VmDomainConfiguration, VmVideoModel,
 )
 from .domain.vm.domain import VmDomain  # noqa
 from .error import DeviceNotFoundError, Error, DomainDoesNotExistError, is_no_domain_error  # noqa
@@ -45,4 +45,5 @@ __all__ = [
     'VmCpuMode',
     'VmDomain',
     'VmDomainConfiguration',
+    'VmVideoModel',
 ]

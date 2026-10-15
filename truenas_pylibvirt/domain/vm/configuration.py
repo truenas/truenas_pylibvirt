@@ -15,6 +15,12 @@ class VmCpuMode(enum.Enum):
     HOST_PASSTHROUGH = "HOST-PASSTHROUGH"
 
 
+class VmVideoModel(enum.Enum):
+    QXL = "QXL"
+    VGA = "VGA"
+    VIRTIO = "VIRTIO"
+
+
 @dataclass(kw_only=True)
 class VmDomainConfiguration(BaseDomainConfiguration):
     vcpus: int
@@ -40,3 +46,4 @@ class VmDomainConfiguration(BaseDomainConfiguration):
     suspend_on_snapshot: bool
     nvram_path: str
     tpm_path: str
+    video_model: VmVideoModel
