@@ -7,6 +7,7 @@ from xml.etree import ElementTree
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
 from ...device.gpu import GPUDevice
+from ...device.nic import NICDevice
 
 
 if TYPE_CHECKING:
@@ -78,7 +79,7 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         return devices_xml
 
     def _features_xml_children(self) -> list[ElementTree.Element]:
-        return [
+        children = [
             xml_element(
                 "capabilities",
                 attributes={"policy": self.domain.configuration.capabilities_policy.value},
@@ -88,6 +89,10 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
                 ],
             ),
         ]
+        # Without an interface libvirt keeps the container in the host's network namespace.
+        if not any(isinstance(device, NICDevice) for device in self.domain.configuration.devices):
+            children.append(xml_element("privnet"))
+        return children
 
     def _misc_xml(self) -> list[ElementTree.Element]:
         children = []
