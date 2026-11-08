@@ -35,20 +35,24 @@ def parse_numeric_set(value: str) -> list[int]:
         return []
 
     cpus: dict[int, None] = {}
-    parts = value.split(',')
-    for part in parts:
-        part_range = part.split('-')
-        if len(part_range) == 1:
-            cpu = int(part_range[0])
-            cpus[cpu] = None
-        elif len(part_range) == 2:
-            start = int(part_range[0])
-            end = int(part_range[1])
-            if start >= end:
-                raise ValueError(f'End of range has to greater that start: {start}-{end}')
-            for cpu in range(start, end + 1):
-                cpus[cpu] = None
-        else:
-            raise ValueError(f'Range has to be in format start-end: {part}')
+    for part in value.split(','):
+        pieces = part.split('-')
+        if len(pieces) > 2:
+            raise ValueError(f'Range has to be in format start-end: {part.strip()!r}')
+
+        start, end = _parse_number(pieces[0]), _parse_number(pieces[-1])
+        if start > end:
+            raise ValueError(f'End of range has to be greater than or equal to start: {part.strip()!r}')
+
+        cpus.update(dict.fromkeys(range(start, end + 1)))
 
     return list(cpus)
+
+
+def _parse_number(value: str) -> int:
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError('Empty elements are not allowed')
+    if not (stripped.isascii() and stripped.isdigit()):
+        raise ValueError(f'{stripped!r} must consist of digits 0-9 only')
+    return int(stripped)
