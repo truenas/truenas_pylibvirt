@@ -4,6 +4,7 @@ import shlex
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree
 
+from ...error import Error
 from ...xml import xml_element
 from ..base.xml import BaseDomainXmlGenerator
 from ...device.gpu import GPUDevice
@@ -22,7 +23,12 @@ class ContainerDomainXmlGenerator(BaseDomainXmlGenerator):
         return "lxc"
 
     def _os_xml(self) -> ElementTree.Element:
-        init = shlex.split(self.domain.configuration.init)
+        try:
+            init = shlex.split(self.domain.configuration.init)
+        except ValueError as e:
+            raise Error(f"Unable to parse init command line {self.domain.configuration.init!r}: {e}") from None
+        if not init:
+            raise Error("Init command line is empty")
         children = [
             xml_element("type", text="exe"),
             xml_element("init", text=init[0]),
