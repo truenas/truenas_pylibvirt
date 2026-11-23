@@ -103,7 +103,8 @@ class DisplayDevice(Device):
                     ('password', 'Password for VNC display devices must be 8 characters or less')
                 )
         elif self.type_ == DisplayDeviceType.SPICE:
-            if self.port == self.web_port:
+            # None means the caller auto-assigns the port after validation
+            if self.port is not None and self.port == self.web_port:
                 verrors.append(
                     ('port', 'Spice server port must not be same as web port')
                 )

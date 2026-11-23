@@ -68,18 +68,28 @@ def test_display_identity(mock_device_delegate):
     assert identity == "0.0.0.0:5912"
 
 
-def _display(mock_device_delegate, *, web, type_=DisplayDeviceType.SPICE):
+def _display(mock_device_delegate, *, web, type_=DisplayDeviceType.SPICE, port=5912, web_port=5913):
     return DisplayDevice(
         type_=type_,
         resolution="1024x768",
-        port=5912,
-        web_port=5913,
+        port=port,
+        web_port=web_port,
         bind="0.0.0.0",
         password="secret",
         web=web,
         wait=False,
         device_delegate=mock_device_delegate,
     )
+
+
+@pytest.mark.parametrize("port,web_port,expect_port_error", [
+    (None, None, False),
+    (5912, 5912, True),
+])
+def test_spice_port_web_port_validation(mock_device_delegate, port, web_port, expect_port_error):
+    device = _display(mock_device_delegate, web=True, port=port, web_port=web_port)
+    port_errors = [error for error in device.validate() if error[0] == "port"]
+    assert bool(port_errors) is expect_port_error
 
 
 def test_run_starts_websockify_when_web_enabled(mock_device_delegate):
